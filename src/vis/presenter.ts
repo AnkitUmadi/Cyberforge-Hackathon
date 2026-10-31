@@ -132,13 +132,17 @@ export class PresenterPlaybackEngine implements IPresenterPlaybackController {
     ) {
         this.milestones = allEvents.filter(e => e.isCriticalMilestone);
 
+        // Always generate robust default briefings for every milestone
+        this.generateDefaultBriefings();
+
         if (briefings.length > 0) {
-            for (const card of briefings) {
-                this.briefingMap.set(card.eventId, card);
+            for (let i = 0; i < briefings.length; i++) {
+                const card = briefings[i];
+                if (card.eventId) this.briefingMap.set(card.eventId, card);
+                if (i < this.milestones.length) {
+                    this.briefingMap.set(this.milestones[i].eventId, card);
+                }
             }
-        } else {
-            // Auto-generate briefing cards if not provided
-            this.generateDefaultBriefings();
         }
     }
 
@@ -235,7 +239,10 @@ export class PresenterPlaybackEngine implements IPresenterPlaybackController {
     public stepToNextCriticalHop(
         options: StepHopOptions = { arrivalStyle: 'ANIMATE_IMPACT', cameraTransitionDurationMs: 650 }
     ): StepHopResult | null {
-        const nextHop = this.milestones.find(m => m.tSimImpact > this.currentSimTime + 0.05);
+        let nextHop = this.milestones.find(m => m.tSimImpact > this.currentSimTime + 0.05);
+        if (!nextHop && this.milestones.length > 0) {
+            nextHop = this.milestones[0];
+        }
         if (!nextHop) return null;
         return this.executeHopTransition(nextHop, options);
     }
@@ -247,6 +254,9 @@ export class PresenterPlaybackEngine implements IPresenterPlaybackController {
             if (this.milestones[i].tSimStart < this.currentSimTime - 0.5) {
                 return this.executeHopTransition(this.milestones[i], options);
             }
+        }
+        if (this.milestones.length > 0) {
+            return this.executeHopTransition(this.milestones[this.milestones.length - 1], options);
         }
         return null;
     }
@@ -282,7 +292,7 @@ export class PresenterPlaybackEngine implements IPresenterPlaybackController {
             framingBounds: { min: { x: minX, y: minY }, max: { x: maxX, y: maxY } }
         };
 
-        const briefingCard = this.briefingMap.get(target.eventId) || this.milestones[0] as any;
+        const briefingCard = this.briefingMap.get(target.eventId) || (this.milestones.length > 0 ? this.briefingMap.get(this.milestones[0].eventId)! : (null as any));
         return {
             targetEvent: target,
             briefingCard,
@@ -297,6 +307,9 @@ export class PresenterPlaybackEngine implements IPresenterPlaybackController {
             if (t >= m.tSimStart && t <= m.tSimImpact + this.sigmaTrail) {
                 return this.briefingMap.get(m.eventId) ?? null;
             }
+        }
+        if (this.milestones.length > 0 && t >= this.milestones[this.milestones.length - 1].tSimStart) {
+            return this.briefingMap.get(this.milestones[this.milestones.length - 1].eventId) ?? null;
         }
         return null;
     }

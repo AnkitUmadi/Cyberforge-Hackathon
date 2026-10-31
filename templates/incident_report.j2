@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <script src="/causal_replay_bundle.js"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cyberforge - Executive Attack Path & Neo4j-Style Interactive Graph</title>
@@ -427,6 +428,113 @@
             border-bottom: 1px solid #162032;
             color: #cbd5e1;
         }
+    
+        /* Causal Replay HUD Overlays */
+        .hud-card-inc {
+            position: absolute;
+            background: rgba(15, 23, 42, 0.90);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(51, 65, 85, 0.6);
+            border-radius: 6px;
+            padding: 8px 12px;
+            font-family: 'JetBrains Mono', monospace, -apple-system;
+            pointer-events: none;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+            z-index: 15;
+        }
+
+        .hud-top-left-inc {
+            top: 48px;
+            left: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            min-width: 190px;
+        }
+
+        .hud-top-right-inc {
+            top: 12px;
+            right: 12px;
+            text-align: right;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .hud-stat-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 10.5px;
+            gap: 8px;
+        }
+
+        .hud-clock-inc {
+            font-size: 18px;
+            font-weight: 700;
+            color: #38bdf8;
+            letter-spacing: -0.01em;
+        }
+
+        /* Floating Forensic Briefing Card */
+        .hud-briefing-card-inc {
+            position: absolute;
+            bottom: 50px;
+            right: 14px;
+            max-width: 340px;
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(14px);
+            border: 1px solid rgba(56, 189, 248, 0.45);
+            border-left: 4px solid #38bdf8;
+            border-radius: 8px;
+            padding: 12px 14px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+            z-index: 20;
+            font-family: 'Inter', -apple-system, sans-serif;
+            pointer-events: auto;
+            transition: all 0.2s ease;
+        }
+
+        .brief-badge {
+            font-size: 9.5px;
+            font-weight: 700;
+            background: rgba(244, 63, 94, 0.2);
+            color: #f43f5e;
+            padding: 2px 6px;
+            border-radius: 4px;
+            border: 1px solid rgba(244, 63, 94, 0.4);
+            font-family: monospace;
+        }
+
+        .speed-btn-group {
+            display: inline-flex;
+            gap: 4px;
+            align-items: center;
+        }
+
+        .btn-speed {
+            background: rgba(30, 41, 59, 0.7);
+            border: 1px solid #334155;
+            color: #94a3b8;
+            font-family: monospace;
+            font-size: 11px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .btn-speed:hover {
+            color: #fff;
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .btn-speed.active {
+            background: rgba(56, 189, 248, 0.25);
+            border-color: #38bdf8;
+            color: #38bdf8;
+            font-weight: 700;
+        }
+    
     </style>
 </head>
 <body>
@@ -600,51 +708,97 @@
                         ▶ Play Campaign
                     </button>
                     <button class="btn-scrub" onclick="resetScrubber('{{ inc.incident_id }}')">
-                        ⏮ Reset
+                        ↺ Reset
                     </button>
-                    <button class="btn-scrub" onclick="stepScrubber('{{ inc.incident_id }}', -15)">
-                        ⏪ -15m
+                    <!-- Presenter Milestone Hop Stepper -->
+                    <button class="btn-scrub" onclick="stepPrevHop('{{ inc.incident_id }}')" title="Previous Critical Hop (Left Arrow)">
+                        ⏮ Prev Hop
                     </button>
-                    <button class="btn-scrub" onclick="stepScrubber('{{ inc.incident_id }}', 15)">
-                        +15m ⏩
+                    <button class="btn-scrub" onclick="stepNextHop('{{ inc.incident_id }}')" title="Next Critical Hop (Right Arrow)">
+                        Next Hop ⏭
                     </button>
+                    <button class="btn-scrub" id="btn-pacing-{{ inc.incident_id }}" onclick="toggleAdaptivePacing('{{ inc.incident_id }}')" style="border-color: rgba(56, 189, 248, 0.4); color: #38bdf8;">
+                        ⚡ Adaptive Decel: ON
+                    </button>
+                    <div class="speed-btn-group">
+                        <button class="btn-speed btn-speed-15-{{ inc.incident_id }}" onclick="setSpeed('{{ inc.incident_id }}', 15)">15x</button>
+                        <button class="btn-speed btn-speed-30-{{ inc.incident_id }} active" onclick="setSpeed('{{ inc.incident_id }}', 30)">30x</button>
+                        <button class="btn-speed btn-speed-60-{{ inc.incident_id }}" onclick="setSpeed('{{ inc.incident_id }}', 60)">60x</button>
+                    </div>
                     <span style="font-size: 0.8rem; color: #94a3b8; font-family: monospace;" id="scrub-status-{{ inc.incident_id }}">
-                        Time: <strong>{{ inc.duration_minutes }} min</strong> / {{ inc.duration_minutes }} min (100% Replay)
+                        Time: <strong>0 min</strong> / {{ inc.duration_minutes }} min
                     </span>
                 </div>
                 <div style="font-size: 0.75rem; color: #38bdf8; font-family: monospace;">
-                    Three-State: <span style="color: #ef4444;">● Confirmed</span> &bull; <span style="color: #f59e0b;">◎ Active Pulse</span> &bull; <span style="color: #38bdf8;">◌ Projected Ghost</span>
+                    Engine: <span style="color: #38bdf8;">Deterministic Closed-Form</span> &bull; <span style="color: #ef4444;">No Physics Drift</span> &bull; <span style="color: #f59e0b;">Heterogeneous Subnets</span>
                 </div>
             </div>
             <input type="range" class="scrubber-slider" id="scrubber-{{ inc.incident_id }}"
-                   min="0" max="{{ inc.duration_minutes }}" step="1" value="{{ inc.duration_minutes }}"
+                   min="0" max="{{ inc.duration_minutes }}" step="1" value="0"
                    oninput="onScrubInput('{{ inc.incident_id }}', this.value)">
         </div>
         {% endif %}
 
-        <!-- VISUAL 1: ATTACK PATH AS A NEO4J-STYLE INTERACTIVE FORCE-DIRECTED GRAPH -->
+        <!-- VISUAL 1: ATTACK PATH AS A CAUSAL TERRITORIAL REPLAY GRAPH -->
         <div class="section-title">
-            <span>🕸️</span> 1. Interactive Neo4j-Style Attack Graph (Drag, Zoom, Click Nodes)
+            <span>🛡️</span> 1. Causal Territorial Attack Graph & Replay Engine (Deterministic Closed-Form $O(1)$)
         </div>
         <div class="neo4j-graph-wrapper">
             <div class="canvas-container" id="canvas-box-{{ inc.incident_id }}">
                 <div class="graph-legend">
-                    <div class="legend-item"><div class="legend-dot" style="background: #ef4444;"></div>Attacker</div>
+                    <div class="legend-item"><div class="legend-dot" style="background: #ef4444;"></div>Attacker / Ingress</div>
                     <div class="legend-item"><div class="legend-dot" style="background: #06b6d4;"></div>Compromised Host</div>
                     <div class="legend-item"><div class="legend-dot" style="background: #f59e0b;"></div>Compromised User</div>
                     <div class="legend-item"><div class="legend-dot" style="background: #a855f7;"></div>C2 / Exfil</div>
                     <div class="legend-item"><div class="legend-dot" style="background: #64748b;"></div>Hop-1 Peer</div>
-                    <div class="legend-item"><div class="legend-dot" style="background: #f43f5e; border: 2px dashed #fca5a5;"></div>Hop-2 Blast Target</div>
+                    <div class="legend-item"><div class="legend-dot" style="background: #f43f5e; border: 2px dashed #fca5a5;"></div>Tier-0 Domain Controller</div>
+                </div>
+
+                <!-- HUD Top-Left Overlay -->
+                <div id="hud-top-left-{{ inc.incident_id }}" class="hud-card-inc hud-top-left-inc">
+                    <div class="hud-stat-row">
+                        <span style="color: #64748b;">ESTATE NODES</span>
+                        <span style="color: #f8fafc; font-weight:600;" id="hud-nodes-{{ inc.incident_id }}">0 / 0</span>
+                    </div>
+                    <div class="hud-stat-row">
+                        <span style="color: #64748b;">ACTIVE VPCs</span>
+                        <span style="color: #f8fafc; font-weight:600;" id="hud-clusters-{{ inc.incident_id }}">0</span>
+                    </div>
+                    <div class="hud-stat-row">
+                        <span style="color: #64748b;">CAMERA ZOOM</span>
+                        <span style="color: #38bdf8; font-weight:600;" id="hud-zoom-{{ inc.incident_id }}">1.00x</span>
+                    </div>
+                    <div class="hud-stat-row">
+                        <span style="color: #64748b;">WARP RATIO</span>
+                        <span style="color: #f59e0b; font-weight:600;" id="hud-warp-{{ inc.incident_id }}">30.0x</span>
+                    </div>
+                </div>
+
+                <!-- HUD Top-Right Overlay -->
+                <div id="hud-top-right-{{ inc.incident_id }}" class="hud-card-inc hud-top-right-inc">
+                    <div class="hud-clock-inc" id="hud-clock-{{ inc.incident_id }}">T+00h 00m</div>
+                    <div style="font-size: 9.5px; color: #64748b;" id="hud-status-{{ inc.incident_id }}">ADAPTIVE CAUSAL REPLAY</div>
+                </div>
+
+                <!-- Live Forensic Briefing Card (Milestone Telemetry) -->
+                <div id="hud-briefing-{{ inc.incident_id }}" class="hud-briefing-card-inc" style="display: none;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+                        <span id="brief-badge-{{ inc.incident_id }}" class="brief-badge">HOP 1 / 5</span>
+                        <span id="brief-dwell-{{ inc.incident_id }}" style="font-size: 10px; color: #94a3b8; font-family: monospace;">+45m dwell</span>
+                    </div>
+                    <div id="brief-headline-{{ inc.incident_id }}" style="font-size: 12.5px; font-weight: 700; color: #fff; margin-bottom: 3px;">Tier-0 Asset Compromised</div>
+                    <div style="font-size: 10.5px; color: #38bdf8; font-family: monospace; margin-bottom: 6px;" id="brief-lineage-{{ inc.incident_id }}">10.10.1.5 → 10.10.99.1</div>
+                    <div style="font-size: 11px; color: #cbd5e1; line-height: 1.4; border-top: 1px solid rgba(51, 65, 85, 0.6); padding-top: 5px;" id="brief-talking-point-{{ inc.incident_id }}">
+                        Adversary exploited lateral credentials to breach crown jewels.
+                    </div>
                 </div>
 
                 <canvas id="graph-canvas-{{ inc.incident_id }}"></canvas>
 
                 <div class="graph-controls">
-                    <button class="btn-graph" id="layout-toggle-{{ inc.incident_id }}" onclick="toggleLayoutMode('{{ inc.incident_id }}')">🌀 Mode: Causal Territorial</button>
-                    <button class="btn-graph" onclick="zoomGraph('{{ inc.incident_id }}', 1.25)">➕ Zoom In</button>
-                    <button class="btn-graph" onclick="zoomGraph('{{ inc.incident_id }}', 0.8)">➖ Zoom Out</button>
-                    <button class="btn-graph" onclick="resetGraphView('{{ inc.incident_id }}')">⛶ Fit Graph</button>
-                    <button class="btn-graph" onclick="togglePhysics('{{ inc.incident_id }}')">⏸ Freeze Physics</button>
+                    <button class="btn-graph" onclick="zoomGraph('{{ inc.incident_id }}', 1.25)">🔍 Zoom In</button>
+                    <button class="btn-graph" onclick="zoomGraph('{{ inc.incident_id }}', 0.8)">🔍 Zoom Out</button>
+                    <button class="btn-graph" onclick="resetGraphView('{{ inc.incident_id }}')">⤢ Fit Graph</button>
                 </div>
             </div>
 
@@ -797,117 +951,11 @@
     </div>
     {% endfor %}
 
-    <!-- Standalone Force-Directed Graph Engine Script -->
+    <!-- Causal Territorial Replay Engine Script -->
     <script>
-        const GRAPH_INSTANCES = {};
+        window.GRAPH_INSTANCES = {};
+        const GRAPH_INSTANCES = window.GRAPH_INSTANCES;
         const INCIDENTS_DATA = {{ incidents_json | safe }};
-
-        // RoundRect polyfill for all browsers and webviews
-        if (typeof CanvasRenderingContext2D !== 'undefined' && !CanvasRenderingContext2D.prototype.roundRect) {
-            CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, radii) {
-                let r = typeof radii === 'number' ? radii : (Array.isArray(radii) ? radii[0] : 4);
-                if (w < 2 * r) r = w / 2;
-                if (h < 2 * r) r = h / 2;
-                this.beginPath();
-                this.moveTo(x + r, y);
-                this.arcTo(x + w, y, x + w, y + h, r);
-                this.arcTo(x + w, y + h, x, y + h, r);
-                this.arcTo(x, y + h, x, y, r);
-                this.arcTo(x, y, x + w, y, r);
-                this.closePath();
-                return this;
-            };
-        }
-
-        // Seeded PRNG: Mulberry32 for 100% deterministic cascade simulation at any tNow
-        function mulberry32(a) {
-            return function() {
-                let t = a += 0x6D2B79F5;
-                t = Math.imul(t ^ t >>> 15, t | 1);
-                t ^= t + Math.imul(t ^ t >>> 7, t | 61);
-                return ((t ^ t >>> 14) >>> 0) / 4294967296;
-            };
-        }
-
-        const easeOutBack = x => 1 + 2.7 * Math.pow(x - 1, 3) + 1.7 * Math.pow(x - 1, 2);
-        const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
-
-        // Quadratic Bezier curves with 14% perpendicular chord offset
-        function bz(a, b, u) {
-            const dx = b.x - a.x, dy = b.y - a.y, v = 1 - u;
-            const cx = (a.x + b.x) / 2 - dy * 0.14, cy = (a.y + b.y) / 2 + dx * 0.14;
-            return [v * v * a.x + 2 * v * u * cx + u * u * b.x, v * v * a.y + 2 * v * u * cy + u * u * b.y];
-        }
-
-        function trace(ctx, a, b, u0, u1) {
-            ctx.beginPath();
-            for (let i = 0; i <= 24; i++) {
-                const [x, y] = bz(a, b, u0 + (u1 - u0) * i / 24);
-                i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
-            }
-        }
-
-        // Min-heap for continuous-time Gillespie stochastic simulation
-        class MinHeap {
-            constructor() { this.h = []; }
-            push(item) {
-                this.h.push(item);
-                let i = this.h.length - 1;
-                while (i > 0) {
-                    const p = (i - 1) >> 1;
-                    if (this.h[i].t < this.h[p].t) {
-                        const tmp = this.h[i]; this.h[i] = this.h[p]; this.h[p] = tmp;
-                        i = p;
-                    } else break;
-                }
-            }
-            pop() {
-                if (this.h.length === 0) return null;
-                const top = this.h[0];
-                const end = this.h.pop();
-                if (this.h.length > 0) {
-                    this.h[0] = end;
-                    let i = 0, n = this.h.length;
-                    while ((i << 1) + 1 < n) {
-                        let left = (i << 1) + 1, right = left + 1, sm = i;
-                        if (this.h[left].t < this.h[sm].t) sm = left;
-                        if (right < n && this.h[right].t < this.h[sm].t) sm = right;
-                        if (sm !== i) {
-                            const tmp = this.h[i]; this.h[i] = this.h[sm]; this.h[sm] = tmp;
-                            i = sm;
-                        } else break;
-                    }
-                }
-                return top;
-            }
-            size() { return this.h.length; }
-        }
-
-        const STAGE_COLORS = {
-            'Reconnaissance': '148,163,184',
-            'Initial Access': '239,68,68',
-            'Execution': '249,115,22',
-            'Persistence': '234,179,8',
-            'Privilege Escalation': '236,72,153',
-            'Defense Evasion': '139,92,246',
-            'Credential Access': '245,158,11',
-            'Discovery': '6,182,212',
-            'Lateral Movement': '168,85,247',
-            'Collection': '59,130,246',
-            'Command and Control': '217,70,239',
-            'Exfiltration': '16,185,129',
-            'Impact': '244,63,94'
-        };
-
-        const TYPE_COLORS = {
-            'WAN': '239,68,68',
-            'HOST': '6,182,212',
-            'USER': '245,158,11',
-            'PEER': '100,116,139',
-            'C2': '168,85,247',
-            'DB': '59,130,246',
-            'DC': '244,63,94'
-        };
 
         class InteractiveTemporalGraph {
             constructor(canvasId, incidentData) {
@@ -917,1240 +965,441 @@
                 this.data = incidentData;
                 this.incId = incidentData.incident_id;
                 this.temporal = incidentData.temporal || {};
-
-                // Section 1 Contract data
-                this.events = this.temporal.events || [];
-                this.nodes = this.temporal.nodes || [];
-                this.reach = this.temporal.reach || [];
-                this.firstCompromise = this.temporal.firstCompromise || {};
-                this.dwellTimes = this.temporal.dwellTimes || {};
                 this.totalDuration = Math.max(60, incidentData.duration_minutes || 440);
-                this.cadenceMedian = this.temporal.cadence_median_min || 15.0;
-                this.cadenceTrend = this.temporal.cadence_trend || "Accelerating 1.8x";
-                this.cadenceSlope = this.temporal.cadence_acceleration_slope || -0.18;
-                this.ttdcP10 = this.temporal.ttdc_p10_min || 5.2;
-                this.ttdcP50 = this.temporal.ttdc_p50_min || 16.4;
-                this.ttdcP90 = this.temporal.ttdc_p90_min || 38.1;
 
-                // Playback and containment state
-                this.speed = 15; // default 15 campaign minutes per second
+                // Replay pacing: default fast pace 30 campaign min/sec (400m in ~13s)
+                this.speed = 30.0;
                 this.isPlaying = false;
-                this.tNow = this.totalDuration; // show complete campaign state initially
-                this.containmentT = Math.round(this.totalDuration * 0.55);
-                this.rafId = null;
-                this.timerId = null;
-                this.cascadeCache = new Map();
+                this.tNow = 0;
+                this.isAdaptivePacing = true;
+                this.lastTimestamp = performance.now();
 
-                // Interactive view transform
-                this.zoomFactor = 1.0;
-                this.panX = 0;
-                this.panY = 0;
-                this.isDraggingScrubber = false;
-                this.isDraggingContainment = false;
-                this.isPanning = false;
-                this.hoverEntity = null;
-                this.selectedEntity = null;
-                this.layoutMode = 'causal'; // 'causal' or 'column'
+                // Mouse interaction state
+                this.isDragging = false;
+                this.lastMouseX = 0;
+                this.lastMouseY = 0;
 
+                // DOM elements
+                this.hudNodes = document.getElementById('hud-nodes-' + this.incId);
+                this.hudClusters = document.getElementById('hud-clusters-' + this.incId);
+                this.hudZoom = document.getElementById('hud-zoom-' + this.incId);
+                this.hudWarp = document.getElementById('hud-warp-' + this.incId);
+                this.hudClock = document.getElementById('hud-clock-' + this.incId);
+                this.hudStatus = document.getElementById('hud-status-' + this.incId);
+                this.scrubber = document.getElementById('scrubber-' + this.incId);
+                this.scrubStatus = document.getElementById('scrub-status-' + this.incId);
+                this.btnPlay = document.getElementById('btn-play-' + this.incId);
+                this.btnPacing = document.getElementById('btn-pacing-' + this.incId);
+
+                // Briefing Card elements
+                this.hudBriefing = document.getElementById('hud-briefing-' + this.incId);
+                this.briefBadge = document.getElementById('brief-badge-' + this.incId);
+                this.briefDwell = document.getElementById('brief-dwell-' + this.incId);
+                this.briefHeadline = document.getElementById('brief-headline-' + this.incId);
+                this.briefLineage = document.getElementById('brief-lineage-' + this.incId);
+                this.briefTalkingPoint = document.getElementById('brief-talking-point-' + this.incId);
+
+                // Initialize Causal Engine
+                this.initEngine();
                 this.initCanvasSize();
-                this.initLayout();
-                this.initEvents();
+                this.bindInteractions();
 
-                // Render initial full campaign state
-                this.render(this.tNow);
+                // Auto-start animation loop
+                this.animate = this.animate.bind(this);
+                requestAnimationFrame(this.animate);
+            }
+
+            initEngine() {
+                this.engine = new CausalReplay.CausalTerritorialEngine({
+                    seed: 42
+                });
+
+                const nodes = this.temporal.nodes || [];
+                const firstComp = this.temporal.firstCompromise || {};
+                const hops = this.data.timeline_hops || [];
+
+                const hopMap = new Map();
+                hops.forEach(h => {
+                    if (h.dest_ip) hopMap.set(h.dest_ip, h);
+                });
+
+                // Generate structured briefing cards from real timeline hops
+                const customBriefings = hops.map((h, idx) => {
+                    const tVal = h.t_min !== undefined ? h.t_min : idx * 15;
+                    const prevT = idx > 0 ? (hops[idx - 1].t_min || 0) : 0;
+                    const dwell = idx === 0 ? "Perimeter Ingress" : `+${Math.max(1, Math.round(tVal - prevT))}m dwell`;
+                    const isCrown = (h.dest_ip && h.dest_ip.includes('99.')) || (h.stage && h.stage.includes('Impact'));
+
+                    return {
+                        hopIndex: idx + 1,
+                        totalCriticalHops: hops.length,
+                        eventId: `ev_${h.dest_ip || idx}`,
+                        timestampFormatted: `T+${Math.floor(tVal / 60)}h ${Math.floor(tVal % 60)}m`,
+                        dwellSincePreviousHop: dwell,
+                        headline: `${h.stage || 'Lateral Movement'}: ${h.tech_name || 'Exploitation'}`,
+                        mitreBadge: {
+                            tactic: h.stage || 'LATERAL_MOVEMENT',
+                            techniqueId: h.tech_id || 'T1021.002',
+                            techniqueName: h.tech_name || 'Lateral Hop'
+                        },
+                        causalLineage: {
+                            sourceHostname: h.src_ip || 'Gateway',
+                            sourceIp: h.src_ip || '198.51.100.23',
+                            targetHostname: h.dest_ip || 'TargetHost',
+                            targetIp: h.dest_ip || '10.10.1.5',
+                            compromisedCredential: isCrown ? 'DomainAdmin' : 'LocalAdmin'
+                        },
+                        blastRadiusStats: {
+                            downstreamNodesExposed: isCrown ? 250 : 8,
+                            cascadeRatePerMin: isCrown ? 4.5 : 1.8
+                        },
+                        presenterTalkingPoints: [
+                            h.evidence || `Attacker executed ${h.tech_name} (${h.tech_id}) from ${h.src_ip} into ${h.dest_ip}.`,
+                            isCrown ? "CRITICAL: Tier-0 Domain Controller reachable - immediate forest isolation required." : "Lateral spread across subnet boundary.",
+                            "Containment: Revoke authentication tickets and quarantine host interface."
+                        ]
+                    };
+                });
+
+                // Build NodeEvent objects for CausalTerritorialEngine
+                const events = nodes.map(n => {
+                    const t = (firstComp[n.id] !== undefined) ? firstComp[n.id] : (n.t !== undefined ? n.t : 0);
+                    const hop = hopMap.get(n.id);
+
+                    let parent = null;
+                    if (hop && hop.src_ip && hop.src_ip !== n.id) {
+                        parent = hop.src_ip;
+                    } else if (n.parent) {
+                        parent = n.parent;
+                    } else if (n.id !== this.data.adversary_ip && nodes.length > 0) {
+                        parent = this.data.adversary_ip || nodes[0].id;
+                    }
+
+                    return {
+                        id: n.id,
+                        cluster: n.subnet || (n.type === 'WAN' ? 'WAN' : (n.type === 'DC' ? '10.10.99.0/24' : '10.10.1.0/24')),
+                        parent: parent,
+                        t: t,
+                        criticality: n.criticality || (n.type === 'DC' ? 1.0 : (n.type === 'HOST' ? 0.75 : 0.4)),
+                        type: n.type,
+                        label: n.label || n.id,
+                        mitreTactic: hop ? hop.stage : undefined,
+                        mitreTechId: hop ? hop.tech_id : undefined,
+                        mitreTechName: hop ? hop.tech_name : undefined,
+                        evidence: hop ? hop.evidence : undefined
+                    };
+                });
+
+                this.engine.ingest(events, customBriefings);
+                this.tNow = 0;
             }
 
             initCanvasSize() {
                 const rect = this.canvas.getBoundingClientRect();
                 const dpr = window.devicePixelRatio || 1;
-                this.dpr = dpr;
-                this.width = rect.width > 50 ? rect.width : (this.canvas.parentElement ? this.canvas.parentElement.clientWidth : 800) || 800;
-                this.height = 560; // stable height including 88px timeline strip
-                this.canvas.width = Math.round(this.width * dpr);
-                this.canvas.height = Math.round(this.height * dpr);
-                this.canvas.style.width = this.width + 'px';
-                this.canvas.style.height = this.height + 'px';
+                this.canvas.width = Math.round(rect.width * dpr);
+                this.canvas.height = Math.round(rect.height * dpr);
             }
 
-            initLayout() {
-                if (this.layoutMode === 'causal') {
-                    this.initCausalTerritorialLayout();
-                } else {
-                    this.initColumnStageLayout();
-                }
-            }
-
-            initCausalTerritorialLayout() {
-                const GOLDEN_ANGLE = 2.3999632;
-                const defaultPitch = 34;
-
-                const p0Id = String(this.data.adversary_ip || (this.nodes.length > 0 ? this.nodes[0].id : 'Attacker'));
-                const p0Pos = { x: 120, y: this.height / 2 - 40 };
-
-                this.nodes.forEach(n => {
-                    n.t = (this.firstCompromise[n.id] !== undefined) ? this.firstCompromise[n.id] : 9999;
-                    n.radius = 20;
-                    n.criticality = n.criticality || 0.5;
-
-                    let parentId = null;
-                    let earliestT = Infinity;
-                    this.events.forEach(e => {
-                        if (e.dst === n.id && e.t_min < earliestT) {
-                            earliestT = e.t_min;
-                            parentId = e.src;
-                        }
-                    });
-                    n.parent = parentId || (n.id === p0Id ? null : p0Id);
-                    n.cluster = n.subnet || n.type || 'Internal';
-                });
-
-                const clusterMap = new Map();
-                this.nodes.forEach(n => {
-                    if (!clusterMap.has(n.cluster)) clusterMap.set(n.cluster, []);
-                    clusterMap.get(n.cluster).push(n);
-                });
-
-                const clusterSeeds = new Map();
-                const padX = 140;
-                const availW = this.width - 280;
-                let cIdx = 0;
-                const totalClusters = clusterMap.size;
-
-                clusterMap.forEach((members, cName) => {
-                    const R = Math.max(75, 1.15 * defaultPitch * Math.sqrt(Math.max(4, members.length)));
-                    let seedX = p0Pos.x + 120;
-                    let seedY = p0Pos.y;
-
-                    if (cName === 'WAN' || members.some(m => m.id === p0Id)) {
-                        seedX = p0Pos.x;
-                        seedY = p0Pos.y;
-                    } else {
-                        const frac = totalClusters > 1 ? (cIdx / (totalClusters - 1)) : 0.5;
-                        seedX = padX + frac * availW + 60;
-                        const altY = ((cIdx % 2 === 0) ? -1 : 1) * (45 + (cIdx * 18));
-                        seedY = clamp(p0Pos.y + altY, 90, this.height - 180);
-                    }
-
-                    clusterSeeds.set(cName, {
-                        x: seedX,
-                        y: seedY,
-                        radius: R,
-                        phase: (cIdx * 1.618) % (Math.PI * 2)
-                    });
-                    cIdx++;
-                });
-
-                clusterMap.forEach((members, cName) => {
-                    const seed = clusterSeeds.get(cName);
-                    members.sort((a, b) => a.t - b.t);
-
-                    members.forEach((node, k) => {
-                        const r = defaultPitch * Math.sqrt(k + 0.5);
-                        const theta = k * GOLDEN_ANGLE + seed.phase;
-                        const slotX = seed.x + r * Math.cos(theta);
-                        const slotY = seed.y + r * Math.sin(theta);
-
-                        node.targetX = slotX;
-                        node.targetY = slotY;
-                        node.x = slotX;
-                        node.y = slotY;
-                        node.budX = seed.x;
-                        node.budY = seed.y;
-                    });
-                });
-
-                this.nodeMap = {};
-                this.nodes.forEach(n => { this.nodeMap[n.id] = n; });
-
-                this.nodes.forEach(n => {
-                    if (n.parent && this.nodeMap[n.parent]) {
-                        n.budX = this.nodeMap[n.parent].targetX;
-                        n.budY = this.nodeMap[n.parent].targetY;
-                    }
-                });
-
-                this.clusterSeeds = clusterSeeds;
-                this.patientZeroPos = p0Pos;
-            }
-
-            initColumnStageLayout() {
-                const stageCols = [[], [], [], [], []];
-                const getNodeCol = (n) => {
-                    const id = String(n.id).toLowerCase();
-                    const t = String(n.type).toUpperCase();
-                    if (t === 'WAN' || id === String(this.data.adversary_ip).toLowerCase() || n.subnet === 'WAN') return 0;
-                    if (id === String(this.data.root_entity).toLowerCase() || (t === 'HOST' && stageCols[1].length === 0)) return 1;
-                    if (t === 'USER' || n.privLevel <= 2) return 2;
-                    if (t === 'C2' || t === 'PEER' || n.criticality < 0.8) return 3;
-                    return 4;
-                };
-
-                this.nodes.forEach(n => {
-                    const col = getNodeCol(n);
-                    stageCols[col].push(n);
-                });
-
-                const padX = 75;
-                const availW = this.width - 2 * padX;
-                const topY = 60;
-                const botY = this.height - 105;
-                const availH = botY - topY;
-
-                stageCols.forEach((colNodes, colIdx) => {
-                    const colX = padX + (colIdx / 4) * availW;
-                    const count = colNodes.length;
-                    colNodes.forEach((node, rowIdx) => {
-                        const colY = topY + ((rowIdx + 1) / (count + 1)) * availH;
-                        node.targetX = colX;
-                        node.targetY = colY;
-                        node.x = colX;
-                        node.y = colY;
-                        node.budX = colX;
-                        node.budY = colY;
-                        node.radius = 20;
-                        node.t = (this.firstCompromise[node.id] !== undefined) ? this.firstCompromise[node.id] : 9999;
-                    });
-                });
-
-                this.nodeMap = {};
-                this.nodes.forEach(n => { this.nodeMap[n.id] = n; });
-            }
-
-            initEvents() {
-                const getPos = (e) => {
-                    const rect = this.canvas.getBoundingClientRect();
-                    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
-                };
-
-                const stripY = this.height - 88;
-                const padX = 70;
-                const stripW = this.width - 2 * padX;
-
-                const timeToX = (t) => padX + clamp(t / this.totalDuration, 0, 1) * stripW;
-                const xToTime = (x) => clamp((x - padX) / stripW, 0, 1) * this.totalDuration;
-
+            bindInteractions() {
                 this.canvas.addEventListener('mousedown', (e) => {
-                    const pos = getPos(e);
-                    // Check if clicking inside timeline strip
-                    if (pos.y >= stripY - 12) {
-                        this.pause(); // Pause playback while user is scrubbing
-                        const contX = timeToX(this.containmentT);
-
-                        if (Math.abs(pos.x - contX) <= 14) {
-                            this.isDraggingContainment = true;
-                        } else {
-                            this.isDraggingScrubber = true;
-                            this.seek(xToTime(pos.x));
-                        }
-                        return;
-                    }
-
-                    // Check if clicking on node or edge
-                    let clicked = null;
-                    for (const n of this.nodes) {
-                        const age = this.tNow - n.t;
-                        if (age >= 0 || (this.currentP && this.currentP[n.id] > 0.05)) {
-                            const dx = pos.x - n.x, dy = pos.y - n.y;
-                            if (dx * dx + dy * dy <= n.radius * n.radius + 64) {
-                                clicked = { type: 'node', data: n };
-                                break;
-                            }
-                        }
-                    }
-
-                    if (!clicked) {
-                        for (const ev of this.events) {
-                            if (ev.t_min <= this.tNow) {
-                                const src = this.nodeMap[ev.src], dst = this.nodeMap[ev.dst];
-                                if (src && dst) {
-                                    const mid = bz(src, dst, 0.5);
-                                    const dx = pos.x - mid[0], dy = pos.y - mid[1];
-                                    if (dx * dx + dy * dy <= 400) {
-                                        clicked = { type: 'edge', data: ev };
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    this.selectedEntity = clicked;
-                    this.updateInspector(clicked);
+                    this.isDragging = true;
+                    this.lastMouseX = e.clientX;
+                    this.lastMouseY = e.clientY;
                 });
 
                 window.addEventListener('mousemove', (e) => {
-                    if (this.isDraggingScrubber) {
-                        const pos = getPos(e);
-                        this.seek(xToTime(pos.x));
-                    } else if (this.isDraggingContainment) {
-                        const pos = getPos(e);
-                        this.setContainment(xToTime(pos.x));
+                    if (this.isDragging && this.engine) {
+                        const dx = e.clientX - this.lastMouseX;
+                        const dy = e.clientY - this.lastMouseY;
+                        this.lastMouseX = e.clientX;
+                        this.lastMouseY = e.clientY;
+                        const rect = this.canvas.getBoundingClientRect();
+                        this.engine.pan(dx, dy, rect.width, rect.height, this.tNow);
                     }
                 });
 
                 window.addEventListener('mouseup', () => {
-                    this.isDraggingScrubber = false;
-                    this.isDraggingContainment = false;
+                    this.isDragging = false;
+                });
+
+                this.canvas.addEventListener('wheel', (e) => {
+                    e.preventDefault();
+                    if (!this.engine) return;
+                    const factor = e.deltaY < 0 ? 1.15 : 0.87;
+                    this.engine.zoom(factor);
+                }, { passive: false });
+
+                this.canvas.addEventListener('click', (e) => {
+                    if (!this.engine) return;
+                    const rect = this.canvas.getBoundingClientRect();
+                    const sx = e.clientX - rect.left;
+                    const sy = e.clientY - rect.top;
+                    const node = this.engine.getNodeAt(sx, sy, rect.width, rect.height, this.tNow);
+                    if (node) {
+                        this.engine.selectedNodeId = node.id;
+                        this.inspectEntity(node);
+                    } else {
+                        this.engine.selectedNodeId = null;
+                    }
+                });
+
+                this.canvas.addEventListener('mousemove', (e) => {
+                    if (this.isDragging || !this.engine) return;
+                    const rect = this.canvas.getBoundingClientRect();
+                    const sx = e.clientX - rect.left;
+                    const sy = e.clientY - rect.top;
+                    const node = this.engine.getNodeAt(sx, sy, rect.width, rect.height, this.tNow);
+                    this.canvas.style.cursor = node ? 'pointer' : 'default';
+                    this.engine.hoverNodeId = node ? node.id : null;
                 });
             }
 
-            // Public API methods - Bulletproof Hybrid Loop Architecture
-            play() {
-                // If scrubber is already at the end of the campaign, bring it cleanly back to 0
-                if (this.tNow >= this.totalDuration - 1.5) {
-                    this.tNow = 0;
-                    this.syncExternalControls();
-                }
-                if (this.isPlaying) return;
-                this.isPlaying = true;
+            inspectEntity(node) {
+                const hint = document.getElementById('inspector-hint-' + this.incId);
+                const content = document.getElementById('inspector-content-' + this.incId);
+                if (hint) hint.style.display = 'none';
+                if (!content) return;
+                content.style.display = 'block';
 
-                const btn = document.getElementById('btn-play-' + this.incId);
-                if (btn) btn.innerHTML = '⏸ Pause';
+                const arch = this.engine.subnetArchetypes.get(node.cluster) || 'WORKSTATION_POOL';
+                const archNames = {
+                    'PERIMETER_DMZ': 'Curvilinear Ribbon DMZ Fence',
+                    'WORKSTATION_POOL': 'Anisotropic Forward Cone Scatter',
+                    'SERVER_CLUSTER': 'Quantized Rack Blade Grid',
+                    'CROWN_JEWELS_AD': 'Concentric Bastion Rings + Moat'
+                };
 
-                let lastWallTime = performance.now();
+                content.innerHTML = `
+                    <div class="inspector-card" style="border-left: 3px solid ${node.type === 'DC' ? '#f43f5e' : (node.type === 'WAN' ? '#ef4444' : '#38bdf8')};">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                            <span style="font-weight: 800; font-size: 0.95rem; color: #fff;">${node.id}</span>
+                            <span class="badge" style="background: rgba(56, 189, 248, 0.15); color: #38bdf8;">${node.type || 'HOST'}</span>
+                        </div>
+                        <div style="font-size: 0.75rem; color: #94a3b8; font-family: monospace;">Subnet: ${node.cluster}</div>
+                        <div style="font-size: 0.75rem; color: #cbd5e1; margin-top: 4px;">Morphology: <strong>${archNames[arch] || arch}</strong></div>
+                    </div>
+                    <div class="inspector-card">
+                        <div style="color: var(--text-muted); font-size: 0.7rem; text-transform: uppercase;">Temporal Telemetry</div>
+                        <div style="margin-top: 4px; font-size: 0.82rem; color: #cbd5e1;">Compromise Time: <strong style="color: #38bdf8;">T+${Math.round(node.birthTime)}m</strong></div>
+                        <div style="margin-top: 2px; font-size: 0.82rem; color: #cbd5e1;">Ingress In-Edge: <span style="font-family: monospace; color: #f59e0b;">${node.parent || 'Patient Zero (Perimeter)'}</span></div>
+                        <div style="margin-top: 2px; font-size: 0.82rem; color: #cbd5e1;">Criticality Score: <strong style="color: ${node.criticality >= 0.75 ? '#ef4444' : '#10b981'};">${Math.round(node.criticality * 100)} / 100</strong></div>
+                    </div>
+                    ${node.mitreTechName ? `
+                    <div class="inspector-card">
+                        <div style="color: var(--text-muted); font-size: 0.7rem; text-transform: uppercase;">MITRE ATT&CK Mapping</div>
+                        <div style="margin-top: 4px; font-weight: 700; color: #f8fafc; font-size: 0.82rem;">${node.mitreTechName} <span style="color: #38bdf8;">(${node.mitreTechId})</span></div>
+                        <div style="margin-top: 2px; font-size: 0.75rem; color: #94a3b8;">${node.mitreTactic || 'Lateral Movement'}</div>
+                        ${node.evidence ? `<div style="margin-top: 4px; font-size: 0.73rem; color: #e2e8f0; font-family: monospace; background: rgba(0,0,0,0.3); padding: 4px; border-radius: 4px;">${node.evidence}</div>` : ''}
+                    </div>` : ''}
+                `;
+            }
 
-                const advance = () => {
-                    if (!this.isPlaying) return;
-                    const nowWall = performance.now();
-                    const dtSec = Math.min(0.2, Math.max(0.005, (nowWall - lastWallTime) / 1000.0));
-                    lastWallTime = nowWall;
-                    this.tNow += dtSec * this.speed;
+            animate(timestamp) {
+                const dt = Math.min(0.1, (timestamp - this.lastTimestamp) / 1000);
+                this.lastTimestamp = timestamp;
+
+                if (this.isPlaying && this.engine) {
+                    if (this.isAdaptivePacing && this.engine.playbackEngine) {
+                        const tickRes = this.engine.playbackEngine.tick(dt * (this.speed / 5.0));
+                        this.tNow = tickRes.currentSimTime;
+                        if (this.hudWarp) {
+                            this.hudWarp.innerText = `${(tickRes.instantaneousWarpRatio * (this.speed / 5.0)).toFixed(1)}x`;
+                        }
+
+                        if (tickRes.activeBriefing && this.hudBriefing) {
+                            this.hudBriefing.style.display = 'block';
+                            if (this.briefBadge) this.briefBadge.innerText = `HOP ${tickRes.activeBriefing.hopIndex} / ${tickRes.activeBriefing.totalCriticalHops}`;
+                            if (this.briefDwell) this.briefDwell.innerText = tickRes.activeBriefing.dwellSincePreviousHop;
+                            if (this.briefHeadline) this.briefHeadline.innerText = tickRes.activeBriefing.headline;
+                            if (this.briefLineage) this.briefLineage.innerText = `${tickRes.activeBriefing.causalLineage.sourceHostname} → ${tickRes.activeBriefing.causalLineage.targetHostname}`;
+                            if (this.briefTalkingPoint) this.briefTalkingPoint.innerText = tickRes.activeBriefing.presenterTalkingPoints[0] || '';
+                        } else if (this.hudBriefing) {
+                            this.hudBriefing.style.display = 'none';
+                        }
+                    } else {
+                        this.tNow += dt * this.speed;
+                        if (this.hudWarp) this.hudWarp.innerText = `${this.speed.toFixed(0)}x (Fixed)`;
+                        if (this.hudBriefing) this.hudBriefing.style.display = 'none';
+                    }
 
                     if (this.tNow >= this.totalDuration) {
                         this.tNow = this.totalDuration;
-                        this.pause();
-                        this.syncExternalControls();
-                        this.render(this.tNow);
-                        return;
+                        this.isPlaying = false;
+                        this.updatePlayState();
                     }
 
-                    this.syncExternalControls();
-                    this.render(this.tNow);
-                };
-
-                // RequestAnimationFrame for 60fps monitor smoothness
-                const tick = () => {
-                    if (!this.isPlaying) return;
-                    advance();
-                    this.rafId = requestAnimationFrame(tick);
-                };
-
-                if (this.rafId) cancelAnimationFrame(this.rafId);
-                this.rafId = requestAnimationFrame(tick);
-
-                // Standalone precision interval fallback in case RAF is backgrounded or throttled
-                if (this.timerId) clearInterval(this.timerId);
-                this.timerId = setInterval(() => {
-                    if (!this.isPlaying) {
-                        clearInterval(this.timerId);
-                        this.timerId = null;
-                        return;
+                    if (this.scrubber) {
+                        this.scrubber.value = Math.round(this.tNow);
                     }
-                    advance();
-                }, 33);
+                }
+
+                // Render Canvas
+                const rect = this.canvas.getBoundingClientRect();
+                const dpr = window.devicePixelRatio || 1;
+                if (this.canvas.width !== Math.round(rect.width * dpr) || this.canvas.height !== Math.round(rect.height * dpr)) {
+                    this.canvas.width = Math.round(rect.width * dpr);
+                    this.canvas.height = Math.round(rect.height * dpr);
+                }
+                this.ctx.resetTransform();
+                this.ctx.scale(dpr, dpr);
+
+                if (this.engine) {
+                    const snapshot = this.engine.render(this.ctx, this.tNow, rect.width, rect.height);
+
+                    if (this.hudNodes) this.hudNodes.innerText = `${snapshot.totalActive} / ${snapshot.totalEstate}`;
+                    if (this.hudClusters) this.hudClusters.innerText = `${this.engine.territoryEngine.clusters.size}`;
+                    if (this.hudZoom) this.hudZoom.innerText = `${(snapshot.camera.zoom * this.engine.userZoom).toFixed(2)}x`;
+
+                    const hrs = Math.floor(this.tNow / 60);
+                    const mins = Math.floor(this.tNow % 60);
+                    if (this.hudClock) this.hudClock.innerText = `T+${String(hrs).padStart(2, '0')}h ${String(mins).padStart(2, '0')}m`;
+                    if (this.scrubStatus) {
+                        this.scrubStatus.innerHTML = `Time: <strong>${Math.round(this.tNow)} min</strong> / ${this.totalDuration} min`;
+                    }
+                }
+
+                requestAnimationFrame(this.animate);
             }
 
-            pause() {
-                this.isPlaying = false;
-                if (this.rafId) {
-                    cancelAnimationFrame(this.rafId);
-                    this.rafId = null;
+            togglePlay() {
+                if (this.tNow >= this.totalDuration) {
+                    this.tNow = 0;
+                    if (this.engine && this.engine.playbackEngine) this.engine.playbackEngine.seekToSimTime(0);
                 }
-                if (this.timerId) {
-                    clearInterval(this.timerId);
-                    this.timerId = null;
-                }
-                this.syncExternalControls();
+                this.isPlaying = !this.isPlaying;
+                this.lastTimestamp = performance.now();
+                this.updatePlayState();
             }
 
             reset() {
-                // Bring back from end to beginning cleanly and pause
-                this.pause();
-                this.seek(0);
-                const btn = document.getElementById('btn-play-' + this.incId);
-                if (btn) btn.innerHTML = '▶ Play Campaign';
-            }
-
-            restart() {
                 this.tNow = 0;
-                this.syncExternalControls();
-                this.play();
+                if (this.engine && this.engine.playbackEngine) this.engine.playbackEngine.seekToSimTime(0);
+                this.isPlaying = true;
+                this.lastTimestamp = performance.now();
+                this.updatePlayState();
+                if (this.scrubber) this.scrubber.value = 0;
             }
 
-            setSpeed(minPerSec) {
-                this.speed = Math.max(1, minPerSec);
+            seek(t) {
+                this.tNow = Math.max(0, Math.min(this.totalDuration, t));
+                if (this.engine && this.engine.playbackEngine) this.engine.playbackEngine.seekToSimTime(this.tNow);
+                this.lastTimestamp = performance.now();
+                if (this.scrubber) this.scrubber.value = Math.round(this.tNow);
             }
 
-            seek(tMin) {
-                this.tNow = clamp(tMin, 0, this.totalDuration);
-                this.syncExternalControls();
-                this.render(this.tNow);
+            stepNextHop() {
+                if (!this.engine || !this.engine.playbackEngine) return;
+                const res = this.engine.playbackEngine.stepToNextCriticalHop({ arrivalStyle: 'ANIMATE_IMPACT' });
+                if (res) {
+                    this.tNow = res.simTimeSetTo;
+                    this.isPlaying = true;
+                    this.updatePlayState();
+                    if (this.scrubber) this.scrubber.value = Math.round(this.tNow);
+                    if (res.briefingCard && this.hudBriefing) {
+                        this.hudBriefing.style.display = 'block';
+                        if (this.briefBadge) this.briefBadge.innerText = `HOP ${res.briefingCard.hopIndex} / ${res.briefingCard.totalCriticalHops}`;
+                        if (this.briefDwell) this.briefDwell.innerText = res.briefingCard.dwellSincePreviousHop;
+                        if (this.briefHeadline) this.briefHeadline.innerText = res.briefingCard.headline;
+                        if (this.briefLineage) this.briefLineage.innerText = `${res.briefingCard.causalLineage.sourceHostname} → ${res.briefingCard.causalLineage.targetHostname}`;
+                        if (this.briefTalkingPoint) this.briefTalkingPoint.innerText = res.briefingCard.presenterTalkingPoints[0] || '';
+                    }
+                }
             }
 
-            setContainment(tMin) {
-                this.containmentT = clamp(tMin, 0, this.totalDuration);
-                this.render(this.tNow);
+            stepPrevHop() {
+                if (!this.engine || !this.engine.playbackEngine) return;
+                const res = this.engine.playbackEngine.stepToPreviousCriticalHop({ arrivalStyle: 'SNAP_COMPLETE' });
+                if (res) {
+                    this.tNow = res.simTimeSetTo;
+                    this.isPlaying = false;
+                    this.updatePlayState();
+                    if (this.scrubber) this.scrubber.value = Math.round(this.tNow);
+                    if (res.briefingCard && this.hudBriefing) {
+                        this.hudBriefing.style.display = 'block';
+                        if (this.briefBadge) this.briefBadge.innerText = `HOP ${res.briefingCard.hopIndex} / ${res.briefingCard.totalCriticalHops}`;
+                        if (this.briefDwell) this.briefDwell.innerText = res.briefingCard.dwellSincePreviousHop;
+                        if (this.briefHeadline) this.briefHeadline.innerText = res.briefingCard.headline;
+                        if (this.briefLineage) this.briefLineage.innerText = `${res.briefingCard.causalLineage.sourceHostname} → ${res.briefingCard.causalLineage.targetHostname}`;
+                        if (this.briefTalkingPoint) this.briefTalkingPoint.innerText = res.briefingCard.presenterTalkingPoints[0] || '';
+                    }
+                }
+            }
+
+            toggleAdaptivePacing() {
+                this.isAdaptivePacing = !this.isAdaptivePacing;
+                if (this.btnPacing) {
+                    this.btnPacing.innerText = this.isAdaptivePacing ? '⚡ Adaptive Decel: ON' : '⚡ Adaptive Decel: OFF';
+                    this.btnPacing.style.color = this.isAdaptivePacing ? '#38bdf8' : '#94a3b8';
+                }
+            }
+
+            setSpeed(speedVal) {
+                this.speed = parseFloat(speedVal);
+                document.querySelectorAll('.btn-speed-' + this.incId).forEach(btn => btn.classList.remove('active'));
+                const cur = document.querySelector('.btn-speed-' + speedVal + '-' + this.incId);
+                if (cur) cur.classList.add('active');
             }
 
             zoom(factor) {
-                this.zoomFactor = clamp(this.zoomFactor * factor, 0.6, 2.0);
-                this.render(this.tNow);
+                if (this.engine) this.engine.zoom(factor);
             }
 
             resetView() {
-                this.zoomFactor = 1.0;
-                this.panX = 0;
-                this.panY = 0;
-                this.render(this.tNow);
+                if (this.engine) this.engine.resetView();
             }
 
-            getPitchNumbers() {
-                return {
-                    campaignMinutes: Math.round(this.totalDuration),
-                    hops: this.events.length,
-                    currentCadenceMin: Number(this.cadenceMedian.toFixed(1)),
-                    accelerationLabel: this.cadenceTrend + " (model estimate)",
-                    ttdcP10: Number(this.ttdcP10.toFixed(1)),
-                    ttdcP50: Number(this.ttdcP50.toFixed(1)),
-                    ttdcP90: Number(this.ttdcP90.toFixed(1)),
-                    savedAssetsAt60: this.temporal.saved_assets_at_60 || 6,
-                    savedAssetsAt120: this.temporal.saved_assets_at_120 || 2,
-                    convexityLabel: this.temporal.containment_convexity_label || "Convex until saturation: containment at 60m saves 4.2x more assets per hour than at 120m",
-                    coveragePct: this.temporal.backtest_coverage_pct || 84.6
-                };
-            }
-
-            syncExternalControls() {
-                const slider = document.getElementById('scrubber-' + this.incId);
-                if (slider && !this.isDraggingScrubber) slider.value = Math.round(this.tNow);
-
-                const status = document.getElementById('scrub-status-' + this.incId);
-                if (status) {
-                    const pct = Math.round((this.tNow / this.totalDuration) * 100);
-                    status.innerHTML = `Time: <strong>${Math.round(this.tNow)} min</strong> / ${this.totalDuration} min (${pct}% Replay)`;
-                }
-
-                const riskDisp = document.getElementById('risk-display-' + this.incId);
-                if (riskDisp && this.currentRisk !== undefined) {
-                    riskDisp.innerHTML = `${Math.round(this.currentRisk)} / 100`;
-                }
-
-                // Dynamic, crystal-clear button labels
-                const btn = document.getElementById('btn-play-' + this.incId);
-                if (btn) {
-                    if (this.isPlaying) {
-                        btn.innerHTML = '⏸ Pause';
-                    } else if (this.tNow >= this.totalDuration - 1.5) {
-                        btn.innerHTML = '🔄 Play Again';
-                    } else if (this.tNow <= 0.5) {
-                        btn.innerHTML = '▶ Play Campaign';
-                    } else {
-                        btn.innerHTML = '▶ Resume';
-                    }
-                }
-            }
-
-            // Continuous-Time Monte Carlo Cascade Simulation (Section 6)
-            runCascadeSimulation(tNow) {
-                const cacheKey = Math.floor(tNow / 5);
-                if (this.cascadeCache.has(cacheKey)) {
-                    return this.cascadeCache.get(cacheKey);
-                }
-
-                // Deterministic PRNG seeded with (seed ^ floor(tNow/5))
-                const rng = mulberry32((1337 ^ cacheKey) >>> 0);
-                const confirmed = new Set();
-                this.nodes.forEach(n => {
-                    if (this.firstCompromise[n.id] !== undefined && this.firstCompromise[n.id] <= tNow) {
-                        confirmed.add(n.id);
-                    }
-                });
-
-                const N = 2000;
-                const infectedCounts = {};
-                const etaSums = {};
-                const dcArrivals = [];
-                this.nodes.forEach(n => { infectedCounts[n.id] = 0; etaSums[n.id] = 0; });
-
-                const privMult = { 1: 1.0, 2: 2.0, 3.5: 3.5, 5: 5.0 };
-                const deltaHat = Math.max(5.0, this.cadenceMedian);
-
-                for (let sim = 0; sim < N; sim++) {
-                    const simInf = new Map();
-                    const heap = new MinHeap();
-
-                    confirmed.forEach(id => {
-                        simInf.set(id, tNow);
-                        heap.push({ t: tNow, node: id });
-                    });
-
-                    let dcTime = null;
-
-                    while (heap.size() > 0) {
-                        const curr = heap.pop();
-                        if (curr.t > simInf.get(curr.node)) continue;
-
-                        const srcNode = this.nodeMap[curr.node];
-                        const priv = srcNode ? privMult[srcNode.privLevel] || 1.5 : 1.5;
-                        const dwell = this.dwellTimes[curr.node] || (curr.t - tNow);
-                        const gDwell = 1.0 + Math.min(dwell, 180) / 60.0;
-
-                        // Outgoing reach edges
-                        const edges = this.reach.filter(r => r.src === curr.node);
-                        for (const r of edges) {
-                            const dstId = r.dst;
-                            const rate = (1.0 / deltaHat) * priv * gDwell * (r.rho || 0.7);
-                            const dt = -Math.log(Math.max(1e-7, 1.0 - rng())) / Math.max(0.001, rate);
-                            const infectTime = curr.t + dt;
-
-                            if (!simInf.has(dstId) || infectTime < simInf.get(dstId)) {
-                                simInf.set(dstId, infectTime);
-                                heap.push({ t: infectTime, node: dstId });
-                                if (dstId.includes('10.10.99.1') || dstId.toLowerCase().includes('dc')) {
-                                    if (dcTime === null || infectTime < dcTime) dcTime = infectTime;
-                                }
-                            }
-                        }
-                    }
-
-                    simInf.forEach((tInf, nId) => {
-                        infectedCounts[nId]++;
-                        etaSums[nId] += Math.max(0, tInf - tNow);
-                    });
-                    if (dcTime !== null) dcArrivals.push(dcTime - tNow);
-                }
-
-                const pMap = {};
-                const etaMap = {};
-                this.nodes.forEach(n => {
-                    pMap[n.id] = confirmed.has(n.id) ? 1.0 : (infectedCounts[n.id] / N);
-                    etaMap[n.id] = infectedCounts[n.id] > 0 ? (etaSums[n.id] / infectedCounts[n.id]) : 45.0;
-                });
-
-                dcArrivals.sort((a, b) => a - b);
-                const p10 = dcArrivals.length > 0 ? dcArrivals[Math.floor(dcArrivals.length * 0.1)] : 5.2;
-                const p50 = dcArrivals.length > 0 ? dcArrivals[Math.floor(dcArrivals.length * 0.5)] : 16.4;
-                const p90 = dcArrivals.length > 0 ? dcArrivals[Math.floor(dcArrivals.length * 0.9)] : 38.1;
-
-                const result = { pMap, etaMap, ttdc: { p10, p50, p90 } };
-                this.cascadeCache.set(cacheKey, result);
-                return result;
-            }
-
-            // =====================================================================
-            // Pure Rendering Function: render(tNow, config)
-            // =====================================================================
-            render(tNow, config = {}) {
-                const ctx = this.ctx;
-                if (!ctx) return;
-                const dpr = this.dpr || 1;
-                const W = this.width;
-                const H = this.height;
-
-                // Reset coordinate matrix cleanly
-                ctx.setTransform(1, 0, 0, 1, 0, 0);
-                ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-
-                // Set logical DPI scale
-                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-                // Run deterministic cascade for tNow
-                const sim = this.runCascadeSimulation(tNow);
-                this.currentP = sim.pMap;
-
-                // Compute dynamic risk and frontier
-                let sumW = 0, sumWP = 0;
-                let frontierNode = null;
-                let maxFirstComp = -1;
-
-                this.nodes.forEach(n => {
-                    const w = n.criticality || 0.5;
-                    const p = sim.pMap[n.id] !== undefined ? sim.pMap[n.id] : (n.t <= tNow ? 1.0 : 0.0);
-                    sumW += w;
-                    sumWP += w * p;
-
-                    if (n.t <= tNow && n.t > maxFirstComp) {
-                        maxFirstComp = n.t;
-                        frontierNode = n;
-                    }
-                });
-
-                this.currentRisk = sumW > 0 ? clamp((100 * sumWP) / sumW, 10, 99) : 45;
-
-                // Dynamic closed-form bud and tether emergence (no pre-drawn static nodes)
-                if (this.layoutMode === 'causal') {
-                    this.nodes.forEach(n => {
-                        const age = tNow - n.t;
-                        if (age >= 0) {
-                            const s = clamp(age / 8, 0, 1);
-                            const ease = 1 - Math.pow(1 - s, 3);
-                            n.x = n.budX + (n.targetX - n.budX) * ease;
-                            n.y = n.budY + (n.targetY - n.budY) * ease;
-                            n.scale = ease;
-                            n.isSettling = (s < 1.0);
-                            n.progress = s;
-                        } else {
-                            n.x = n.budX;
-                            n.y = n.budY;
-                            n.scale = 0;
-                            n.isSettling = false;
-                            n.progress = 0;
-                        }
-                    });
-                }
-
-                // Save transform for graph zoom / pan
-                ctx.save();
-                ctx.translate(this.panX, this.panY);
-                ctx.scale(this.zoomFactor, this.zoomFactor);
-
-                // 1. Draw Subtle Background Grid & Column Stages
-                this.renderBackgroundAndStages(ctx, W, H);
-
-                // 2. Render Projected Ghost Edges (Section 5)
-                this.renderGhostEdges(ctx, tNow, sim.pMap);
-
-                // 3. Render Actual Edges (Section 4)
-                this.renderEdges(ctx, tNow);
-
-                // 4. Render Projected Ghost Nodes (Section 5)
-                this.renderGhostNodes(ctx, tNow, sim.pMap, sim.etaMap);
-
-                // 5. Render Active / Confirmed Nodes (Section 3)
-                this.renderNodes(ctx, tNow, frontierNode);
-
-                ctx.restore();
-
-                // 6. Render Integrated Timeline Strip (Section 7)
-                this.renderTimelineStrip(ctx, tNow, sim);
-
-                // 7. Render HUD Overlay (Section 8)
-                this.renderHUD(ctx, tNow, frontierNode);
-            }
-
-            renderBackgroundAndStages(ctx, W, H) {
-                ctx.fillStyle = '#0a0f1d';
-                ctx.fillRect(0, 0, W, H);
-
-                if (this.layoutMode === 'causal') {
-                    // 1. Draw subtle cluster territory boundaries & halos
-                    if (this.clusterSeeds) {
-                        this.clusterSeeds.forEach((seed, cName) => {
-                            ctx.save();
-                            ctx.beginPath();
-                            ctx.arc(seed.x, seed.y, seed.radius, 0, Math.PI * 2);
-                            ctx.strokeStyle = 'rgba(56, 189, 248, 0.12)';
-                            ctx.lineWidth = 1;
-                            ctx.setLineDash([4, 6]);
-                            ctx.stroke();
-
-                            ctx.fillStyle = '#64748b';
-                            ctx.font = 'bold 9px monospace';
-                            ctx.textAlign = 'center';
-                            ctx.fillText(`TERRITORY: ${cName.toUpperCase()}`, seed.x, seed.y - seed.radius - 6);
-                            ctx.restore();
-                        });
-                    }
-
-                    // 2. Draw expanding causal wavefront shockwave arc from Patient Zero
-                    if (this.patientZeroPos) {
-                        let maxDist = 0;
-                        this.nodes.forEach(n => {
-                            if (n.t <= this.tNow) {
-                                const d = Math.hypot(n.x - this.patientZeroPos.x, n.y - this.patientZeroPos.y);
-                                if (d > maxDist) maxDist = d;
-                            }
-                        });
-                        if (maxDist > 0) {
-                            ctx.save();
-                            ctx.beginPath();
-                            ctx.arc(this.patientZeroPos.x, this.patientZeroPos.y, maxDist, 0, Math.PI * 2);
-                            ctx.strokeStyle = 'rgba(239, 68, 68, 0.22)';
-                            ctx.lineWidth = 2;
-                            ctx.setLineDash([6, 8]);
-                            ctx.stroke();
-                            ctx.restore();
-                        }
-                    }
-
-                    // 3. Draw active emerging tethers connecting newborn nodes to their parent buds
-                    this.nodes.forEach(n => {
-                        if (n.t <= this.tNow && n.isSettling) {
-                            const opacity = Math.max(0, 1 - n.progress);
-                            const dx = n.x - n.budX;
-                            const dy = n.y - n.budY;
-                            const cx = (n.budX + n.x) / 2 - dy * 0.14;
-                            const cy = (n.budY + n.y) / 2 + dx * 0.14;
-
-                            ctx.save();
-                            ctx.beginPath();
-                            ctx.moveTo(n.budX, n.budY);
-                            ctx.quadraticCurveTo(cx, cy, n.x, n.y);
-                            ctx.strokeStyle = `rgba(245, 158, 11, ${opacity * 0.8})`;
-                            ctx.lineWidth = Math.max(0.8, opacity * 2.5);
-                            ctx.stroke();
-                            ctx.restore();
-                        }
-                    });
-                } else {
-                    const padX = 75;
-                    const availW = W - 2 * padX;
-                    const stages = [
-                        { title: "WAN / ADVERSARY", sub: "Stage 0 (Origin)" },
-                        { title: "DMZ ENTRY", sub: "Initial Access & Exec" },
-                        { title: "CREDENTIAL / USER", sub: "Token & Kerberos" },
-                        { title: "INTERNAL LATERAL", sub: "Peer & C2 Pivot" },
-                        { title: "CROWN JEWELS", sub: "Active Directory / DC" }
-                    ];
-
-                    ctx.font = '10px "Inter", -apple-system, sans-serif';
-                    ctx.textAlign = 'center';
-
-                    stages.forEach((st, i) => {
-                        const x = padX + (i / 4) * availW;
-                        ctx.strokeStyle = 'rgba(30, 41, 59, 0.45)';
-                        ctx.setLineDash([3, 5]);
-                        ctx.beginPath();
-                        ctx.moveTo(x, 42);
-                        ctx.lineTo(x, H - 98);
-                        ctx.stroke();
-                        ctx.setLineDash([]);
-
-                        ctx.fillStyle = '#64748b';
-                        ctx.fillText(st.title, x, 28);
-                        ctx.fillStyle = '#475569';
-                        ctx.fillText(st.sub, x, 40);
-                    });
-                }
-            }
-
-            renderGhostEdges(ctx, tNow, pMap) {
-                ctx.save();
-                this.reach.forEach(r => {
-                    const src = this.nodeMap[r.src], dst = this.nodeMap[r.dst];
-                    if (!src || !dst) return;
-                    const srcComp = src.t <= tNow;
-                    const dstComp = dst.t <= tNow;
-                    const pDst = pMap[dst.id] || 0;
-
-                    if (srcComp && !dstComp && pDst > 0.05) {
-                        ctx.strokeStyle = `rgba(56, 189, 248, ${clamp(pDst * 0.85, 0.2, 0.9)})`;
-                        ctx.lineWidth = 1.6;
-                        ctx.setLineDash([4, 6]);
-                        ctx.lineDashOffset = -((tNow * 12 + performance.now() * 0.04) % 10);
-                        trace(ctx, src, dst, 0, 1);
-                        ctx.stroke();
-                        ctx.setLineDash([]);
-                    }
-                });
-                ctx.restore();
-            }
-
-            renderEdges(ctx, tNow) {
-                ctx.save();
-                this.events.forEach((e, idx) => {
-                    const td = tNow - e.t_min;
-                    if (td < 0) return;
-
-                    const src = this.nodeMap[e.src], dst = this.nodeMap[e.dst];
-                    if (!src || !dst) return;
-
-                    const colRgb = STAGE_COLORS[e.stage] || '239,68,68';
-
-                    if (td <= 6) {
-                        const u = clamp(td / 6, 0, 1);
-                        ctx.strokeStyle = `rgba(${colRgb}, 0.9)`;
-                        ctx.lineWidth = 2.4;
-                        trace(ctx, src, dst, 0, u);
-                        ctx.stroke();
-
-                        const head = bz(src, dst, u);
-                        ctx.fillStyle = '#ffffff';
-                        ctx.shadowColor = `rgb(${colRgb})`;
-                        ctx.shadowBlur = 12;
-                        ctx.beginPath();
-                        ctx.arc(head[0], head[1], 4, 0, 6.283);
-                        ctx.fill();
-                        ctx.shadowBlur = 0;
-                    } else {
-                        const alpha = td < 30 ? 0.85 : 0.45;
-                        ctx.strokeStyle = `rgba(${colRgb}, ${alpha})`;
-                        ctx.lineWidth = Math.min(3.5, 1.4 + (e.conf || 0.8) * 1.5);
-                        trace(ctx, src, dst, 0, 1);
-                        ctx.stroke();
-
-                        if (td < 45) {
-                            const uPhoton = ((tNow * 1.8 + idx * 0.25) % 1.2) / 1.2;
-                            if (uPhoton <= 1.0) {
-                                const pt = bz(src, dst, uPhoton);
-                                ctx.fillStyle = '#ffffff';
-                                ctx.shadowColor = `rgb(${colRgb})`;
-                                ctx.shadowBlur = 10;
-                                ctx.beginPath();
-                                ctx.arc(pt[0], pt[1], 3, 0, 6.283);
-                                ctx.fill();
-                                ctx.shadowBlur = 0;
-                            }
-                        }
-
-                        if (td <= 50) {
-                            const pillAlpha = td <= 10 ? (td / 10) : clamp((50 - td) / 40, 0, 1);
-                            const mid = bz(src, dst, 0.5);
-                            ctx.fillStyle = `rgba(15, 23, 42, ${0.85 * pillAlpha})`;
-                            ctx.strokeStyle = `rgba(${colRgb}, ${0.7 * pillAlpha})`;
-                            ctx.lineWidth = 1;
-                            const text = e.edgeLabel || e.stage;
-                            ctx.font = '9px monospace';
-                            const tw = ctx.measureText(text).width + 12;
-                            ctx.beginPath();
-                            ctx.roundRect(mid[0] - tw / 2, mid[1] - 8, tw, 16, 4);
-                            ctx.fill();
-                            ctx.stroke();
-
-                            ctx.fillStyle = `rgba(255, 255, 255, ${pillAlpha})`;
-                            ctx.textAlign = 'center';
-                            ctx.textBaseline = 'middle';
-                            ctx.fillText(text, mid[0], mid[1]);
-                        }
-                    }
-                });
-                ctx.restore();
-            }
-
-            renderGhostNodes(ctx, tNow, pMap, etaMap) {
-                ctx.save();
-                this.nodes.forEach(n => {
-                    const age = tNow - n.t;
-                    const p = pMap[n.id] || 0;
-                    if (age < 0 && p > 0.05) {
-                        const R = n.radius;
-                        const isHighCrit = (n.criticality || 0) >= 0.8;
-                        const colRgb = isHighCrit ? '168,85,247' : '56,189,248';
-
-                        ctx.strokeStyle = `rgba(${colRgb}, ${clamp(p, 0.35, 0.95)})`;
-                        ctx.fillStyle = `rgba(${colRgb}, 0.05)`;
-                        ctx.lineWidth = 1.8;
-                        ctx.setLineDash([4, 4]);
-
-                        ctx.beginPath();
-                        ctx.arc(n.x, n.y, R, 0, 6.283);
-                        ctx.fill();
-                        ctx.stroke();
-                        ctx.setLineDash([]);
-
-                        const eta = Math.round(etaMap[n.id] || 38);
-                        ctx.font = '8.5px monospace';
-                        ctx.textAlign = 'center';
-                        ctx.fillStyle = `rgba(${colRgb}, 0.95)`;
-                        ctx.fillText(`P=${p.toFixed(2)} (model estimate)`, n.x, n.y - R - 13);
-                        ctx.fillStyle = '#94a3b8';
-                        ctx.fillText(`ETA +${eta}m (model estimate)`, n.x, n.y - R - 3);
-
-                        ctx.fillStyle = '#64748b';
-                        ctx.fillText(n.id, n.x, n.y + R + 12);
-                    }
-                });
-                ctx.restore();
-            }
-
-            renderNodes(ctx, tNow, frontierNode) {
-                ctx.save();
-                const R = 20;
-
-                this.nodes.forEach(n => {
-                    const age = tNow - n.t;
-                    if (age < 0) return;
-
-                    const colRgb = TYPE_COLORS[n.type] || '6,182,212';
-                    const scale = easeOutBack(clamp(age / 8));
-                    const heat = age < 25 ? 1 : clamp(1 - (age - 25) / 55);
-
-                    if (age < 40) {
-                        ctx.save();
-                        ctx.globalCompositeOperation = 'lighter';
-                        const waveU = age / 40;
-                        const radGrad = ctx.createRadialGradient(n.x, n.y, R * 0.5, n.x, n.y, R * (1 + 2.5 * waveU));
-                        radGrad.addColorStop(0, `rgba(${colRgb}, ${0.22 * (1 - waveU)})`);
-                        radGrad.addColorStop(1, 'rgba(0,0,0,0)');
-                        ctx.fillStyle = radGrad;
-                        ctx.beginPath();
-                        ctx.arc(n.x, n.y, R * (1 + 2.5 * waveU), 0, 6.283);
-                        ctx.fill();
-                        ctx.restore();
-                    }
-
-                    ctx.shadowColor = `rgb(${colRgb})`;
-                    ctx.shadowBlur = 22 * heat;
-                    ctx.fillStyle = `rgba(${colRgb}, ${0.25 + 0.65 * heat})`;
-                    ctx.beginPath();
-                    ctx.arc(n.x, n.y, R * scale, 0, 6.283);
-                    ctx.fill();
-
-                    ctx.strokeStyle = `rgba(${colRgb}, ${0.55 + 0.45 * heat})`;
-                    ctx.lineWidth = 1.5 + 1.5 * heat;
-                    ctx.stroke();
-                    ctx.shadowBlur = 0;
-
-                    if (age < 25) {
-                        ctx.fillStyle = `rgba(255,255,255, ${heat})`;
-                        ctx.beginPath();
-                        ctx.arc(n.x, n.y, 4 * heat, 0, 6.283);
-                        ctx.fill();
-                    }
-
-                    if (age < 22) {
-                        const u = age / 22;
-                        ctx.strokeStyle = `rgba(${colRgb}, ${0.7 * (1 - u)})`;
-                        ctx.lineWidth = 2 * (1 - u);
-                        ctx.beginPath();
-                        ctx.arc(n.x, n.y, R * (1 + 2.2 * u), 0, 6.283);
-                        ctx.stroke();
-                    }
-
-                    ctx.fillStyle = '#ffffff';
-                    ctx.font = 'bold 9px -apple-system, monospace';
-                    ctx.textAlign = 'center';
-                    ctx.textBaseline = 'middle';
-                    ctx.fillText(n.type, n.x, n.y);
-
-                    ctx.font = '9px monospace';
-                    ctx.fillStyle = '#e2e8f0';
-                    ctx.fillText(n.id, n.x, n.y + R + 12);
-                    ctx.fillStyle = '#38bdf8';
-                    ctx.fillText(`T+${Math.round(n.t)}m`, n.x, n.y + R + 22);
-
-                    if (frontierNode && frontierNode.id === n.id && (tNow - n.t) < 45) {
-                        const pulse = (Math.sin(performance.now() * 0.006) + 1) / 2;
-                        ctx.strokeStyle = `rgba(245, 158, 11, ${0.5 + 0.5 * pulse})`;
-                        ctx.lineWidth = 2.5;
-                        ctx.beginPath();
-                        ctx.arc(n.x, n.y, R * 1.5 + 4 * pulse, 0, 6.283);
-                        ctx.stroke();
-
-                        ctx.fillStyle = '#f59e0b';
-                        ctx.beginPath();
-                        ctx.roundRect(n.x - 22, n.y - R - 22, 44, 14, 4);
-                        ctx.fill();
-                        ctx.fillStyle = '#000000';
-                        ctx.font = 'bold 8px monospace';
-                        ctx.fillText('ACTIVE', n.x, n.y - R - 13);
-                    }
-                });
-                ctx.restore();
-            }
-
-            renderTimelineStrip(ctx, tNow, sim) {
-                ctx.save();
-                const W = this.width;
-                const H = this.height;
-                const stripY = H - 88;
-                const padX = 70;
-                const stripW = W - 2 * padX;
-
-                // Strip background
-                ctx.fillStyle = 'rgba(10, 15, 29, 0.96)';
-                ctx.fillRect(0, stripY, W, 88);
-                ctx.strokeStyle = 'rgba(51, 65, 85, 0.7)';
-                ctx.lineWidth = 1;
-                ctx.beginPath();
-                ctx.moveTo(0, stripY);
-                ctx.lineTo(W, stripY);
-                ctx.stroke();
-
-                const timeToX = (t) => padX + clamp(t / this.totalDuration, 0, 1) * stripW;
-                const nowX = timeToX(tNow);
-                const contX = timeToX(this.containmentT);
-
-                // Hatched future pattern right of tNow
-                if (nowX < padX + stripW) {
-                    ctx.save();
-                    ctx.beginPath();
-                    ctx.rect(nowX, stripY, (padX + stripW) - nowX, 88);
-                    ctx.clip();
-                    ctx.strokeStyle = 'rgba(56, 189, 248, 0.08)';
-                    ctx.lineWidth = 1;
-                    for (let hx = nowX - 88; hx < padX + stripW + 88; hx += 12) {
-                        ctx.beginPath();
-                        ctx.moveTo(hx, stripY);
-                        ctx.lineTo(hx + 88, stripY + 88);
-                        ctx.stroke();
-                    }
-                    ctx.restore();
-                }
-
-                // P10-P90 TTDC Fan Band right of tNow
-                const p10X = timeToX(tNow + this.ttdcP10);
-                const p50X = timeToX(tNow + this.ttdcP50);
-                const p90X = timeToX(tNow + this.ttdcP90);
-
-                if (p10X < padX + stripW) {
-                    ctx.fillStyle = 'rgba(168, 85, 247, 0.16)';
-                    ctx.fillRect(p10X, stripY + 12, Math.max(2, p90X - p10X), 52);
-
-                    ctx.strokeStyle = '#a855f7';
-                    ctx.lineWidth = 1.5;
-                    ctx.setLineDash([3, 3]);
-                    ctx.beginPath();
-                    ctx.moveTo(p50X, stripY + 10);
-                    ctx.lineTo(p50X, stripY + 68);
-                    ctx.stroke();
-                    ctx.setLineDash([]);
-
-                    ctx.fillStyle = '#c084fc';
-                    ctx.font = '8px monospace';
-                    ctx.textAlign = 'center';
-                    ctx.fillText(`DC TTDC P50: +${Math.round(this.ttdcP50)}m (model estimate)`, p50X, stripY + 22);
-                }
-
-                // Baseline progress track
-                const baseY = stripY + 60;
-                ctx.strokeStyle = 'rgba(51, 65, 85, 0.8)';
-                ctx.lineWidth = 3;
-                ctx.beginPath();
-                ctx.moveTo(padX, baseY);
-                ctx.lineTo(padX + stripW, baseY);
-                ctx.stroke();
-
-                // Solid replay track up to tNow
-                ctx.strokeStyle = '#38bdf8';
-                ctx.lineWidth = 3;
-                ctx.beginPath();
-                ctx.moveTo(padX, baseY);
-                ctx.lineTo(nowX, baseY);
-                ctx.stroke();
-
-                // Risk(t) curve across timeline
-                const steps = 60;
-                ctx.beginPath();
-                for (let s = 0; s <= steps; s++) {
-                    const t = (s / steps) * this.totalDuration;
-                    const x = timeToX(t);
-                    const rBase = 15 + 75 / (1 + Math.exp(-0.02 * (t - this.totalDuration * 0.4)));
-                    const y = (stripY + 54) - (rBase / 100) * 38;
-                    s === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-                }
-                ctx.strokeStyle = 'rgba(239, 68, 68, 0.7)';
-                ctx.lineWidth = 1.8;
-                ctx.stroke();
-
-                // Event tick dots on baseline
-                this.events.forEach(ev => {
-                    const ex = timeToX(ev.t_min);
-                    const isFired = ev.t_min <= tNow;
-                    const colRgb = STAGE_COLORS[ev.stage] || '239,68,68';
-
-                    ctx.fillStyle = isFired ? `rgb(${colRgb})` : 'rgba(15, 23, 42, 0.9)';
-                    ctx.strokeStyle = `rgb(${colRgb})`;
-                    ctx.lineWidth = 1.2;
-                    ctx.beginPath();
-                    ctx.arc(ex, baseY, isFired ? 3.5 : 2.5, 0, 6.283);
-                    ctx.fill();
-                    ctx.stroke();
-                });
-
-                // Draggable Amber Containment Marker (Tc)
-                ctx.strokeStyle = '#f59e0b';
-                ctx.lineWidth = 1.8;
-                ctx.setLineDash([4, 4]);
-                ctx.beginPath();
-                ctx.moveTo(contX, stripY + 4);
-                ctx.lineTo(contX, stripY + 76);
-                ctx.stroke();
-                ctx.setLineDash([]);
-
-                ctx.fillStyle = '#f59e0b';
-                ctx.beginPath();
-                ctx.arc(contX, stripY + 12, 5, 0, 6.283);
-                ctx.fill();
-
-                const savedEst = this.containmentT <= 60 ? (this.temporal.saved_assets_at_60 || 6) : (this.temporal.saved_assets_at_120 || 2);
-                ctx.fillStyle = '#f59e0b';
-                ctx.font = '8.5px monospace';
-                ctx.textAlign = 'center';
-                ctx.fillText(`Tc=${Math.round(this.containmentT)}m: Saved ${savedEst} assets (model estimate)`, contX, stripY + 34);
-
-                // Draggable Cyan NOW Scrubber Knob
-                ctx.strokeStyle = '#38bdf8';
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                ctx.moveTo(nowX, stripY + 6);
-                ctx.lineTo(nowX, stripY + 76);
-                ctx.stroke();
-
-                ctx.fillStyle = '#38bdf8';
-                ctx.shadowColor = '#38bdf8';
-                ctx.shadowBlur = 10;
-                ctx.beginPath();
-                ctx.arc(nowX, baseY, 7, 0, 6.283);
-                ctx.fill();
-                ctx.shadowBlur = 0;
-
-                ctx.fillStyle = '#0f172a';
-                ctx.beginPath();
-                ctx.arc(nowX, baseY, 3, 0, 6.283);
-                ctx.fill();
-
-                ctx.fillStyle = '#ffffff';
-                ctx.font = 'bold 9px monospace';
-                ctx.textAlign = 'center';
-                ctx.fillText(`T+${Math.round(tNow)}m`, nowX, stripY + 76);
-
-                ctx.fillStyle = '#64748b';
-                ctx.font = '9px monospace';
-                ctx.textAlign = 'left';
-                ctx.fillText('TIMELINE & RISK(t)', padX, stripY + 14);
-                ctx.textAlign = 'right';
-                ctx.fillText(`${this.totalDuration}m CAMPAIGN`, padX + stripW, stripY + 14);
-
-                ctx.restore();
-            }
-
-            renderHUD(ctx, tNow, frontierNode) {
-                ctx.save();
-                const hudX = 16, hudY = 16, hudW = 380, hudH = 108;
-
-                ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
-                ctx.strokeStyle = 'rgba(51, 65, 85, 0.85)';
-                ctx.lineWidth = 1;
-                ctx.beginPath();
-                ctx.roundRect(hudX, hudY, hudW, hudH, 6);
-                ctx.fill();
-                ctx.stroke();
-
-                let lastEventBefore = 0;
-                this.events.forEach(ev => {
-                    if (ev.t_min <= tNow && ev.t_min > lastEventBefore) lastEventBefore = ev.t_min;
-                });
-                const gap = tNow - lastEventBefore;
-                const isPerimeterDormant = gap > (2 * Math.max(5.0, this.cadenceMedian));
-
-                ctx.textAlign = 'left';
-                ctx.textBaseline = 'top';
-
-                ctx.font = 'bold 11px monospace';
-                ctx.fillStyle = '#ffffff';
-                ctx.fillText(`T+${String(Math.round(tNow)).padStart(3, '0')}m`, hudX + 12, hudY + 10);
-                ctx.font = '10px monospace';
-                ctx.fillStyle = '#38bdf8';
-                ctx.fillText(`Cadence: ${this.cadenceMedian.toFixed(1)}m (${this.cadenceTrend}) (model estimate)`, hudX + 80, hudY + 11);
-
-                const riskVal = Math.round(this.currentRisk);
-                ctx.fillStyle = riskVal > 75 ? '#ef4444' : (riskVal > 45 ? '#f59e0b' : '#10b981');
-                ctx.font = 'bold 10.5px monospace';
-                ctx.fillText(`Risk: ${riskVal}/100`, hudX + 12, hudY + 30);
-                ctx.fillStyle = '#94a3b8';
-                ctx.font = '10px monospace';
-                ctx.fillText(`Velocity: +${(1.2 + (riskVal / 100)).toFixed(1)}/min (model estimate)`, hudX + 130, hudY + 31);
-
-                const frontStr = frontierNode ? `${frontierNode.id} (${frontierNode.type})` : 'Perimeter WAN';
-                ctx.fillStyle = '#e2e8f0';
-                ctx.fillText(`Frontier: ${frontStr} ──► DC Reachable (model estimate)`, hudX + 12, hudY + 50);
-
-                ctx.fillStyle = '#cbd5e1';
-                const modeStr = this.isPlaying ? `PLAYING (${this.speed} min/s)` : (this.tNow >= this.totalDuration - 1.5 ? 'COMPLETED (Click Replay)' : 'PAUSED (Scrubber Ready)');
-                ctx.fillText(`Mode: ${modeStr}`, hudX + 12, hudY + 69);
-
-                if (isPerimeterDormant) {
-                    ctx.fillStyle = '#f59e0b';
-                    ctx.fillText('Status: No perimeter-visible activity (intra-subnet or dormant)', hudX + 12, hudY + 88);
-                } else {
-                    ctx.fillStyle = '#38bdf8';
-                    ctx.fillText('Status: Active lateral spread (model estimate)', hudX + 12, hudY + 88);
-                }
-
-                ctx.restore();
-            }
-
-            updateInspector(entity) {
-                const hint = document.getElementById('inspector-hint-' + this.incId);
-                const inspector = document.getElementById('inspector-' + this.incId);
-                if (!inspector) return;
-
-                if (!entity) {
-                    if (hint) hint.innerHTML = 'Click any node or connection edge in the graph to inspect forensic telemetry and exposure details.';
-                    return;
-                }
-
-                if (entity.type === 'node') {
-                    const n = entity.data;
-                    const p = this.currentP && this.currentP[n.id] !== undefined ? this.currentP[n.id] : 1.0;
-                    const status = n.t <= this.tNow ? (this.tNow - n.t < 25 ? 'Active Pulse' : 'Confirmed Compromised') : `Projected Ghost (P=${p.toFixed(2)}) (model estimate)`;
-
-                    inspector.innerHTML = `
-                        <div class="inspector-title"><span>🔍</span> Node: <code>${n.id}</code></div>
-                        <div style="font-size: 0.85rem; color: #cbd5e1; margin-bottom: 8px;">
-                            <strong>Entity Type:</strong> ${n.type} &bull; <strong>Subnet:</strong> ${n.subnet || 'DMZ'}
-                        </div>
-                        <div style="font-size: 0.85rem; color: #cbd5e1; margin-bottom: 8px;">
-                            <strong>Criticality:</strong> ${(n.criticality * 100).toFixed(0)}% &bull; <strong>Privilege:</strong> ${n.privLevel || 1.0}
-                        </div>
-                        <div style="font-size: 0.85rem; color: #38bdf8; margin-bottom: 8px;">
-                            <strong>Status:</strong> ${status}
-                        </div>
-                        <div style="font-size: 0.8rem; color: #94a3b8; border-top: 1px solid #334155; padding-top: 8px;">
-                            <strong>First Compromise:</strong> ${n.t !== 9999 ? 'T+' + Math.round(n.t) + 'm' : 'Forecasted Target'}<br>
-                            <strong>Blast Radius Reach:</strong> Allowed Fortinet policy sessions verified
-                        </div>
-                    `;
-                } else if (entity.type === 'edge') {
-                    const e = entity.data;
-                    inspector.innerHTML = `
-                        <div class="inspector-title"><span>⚡</span> Attack Hop: <code>${e.src}</code> ──► <code>${e.dst}</code></div>
-                        <div style="font-size: 0.85rem; color: #cbd5e1; margin-bottom: 8px;">
-                            <strong>Stage:</strong> ${e.stage} &bull; <strong>Timestamp:</strong> T+${Math.round(e.t_min)}m
-                        </div>
-                        <div style="font-size: 0.85rem; color: #cbd5e1; margin-bottom: 8px;">
-                            <strong>Technique:</strong> ${e.edgeLabel || 'Lateral Execution'}
-                        </div>
-                        <div style="font-size: 0.8rem; color: #94a3b8; border-top: 1px solid #334155; padding-top: 8px;">
-                            <strong>Evidence:</strong> ${e.label || 'Direct forensic signature match'}<br>
-                            <strong>Observed Cadence:</strong> Real policy reachability &Delta; = ${this.cadenceMedian.toFixed(1)}m
-                        </div>
-                    `;
+            updatePlayState() {
+                if (this.btnPlay) {
+                    this.btnPlay.innerText = this.isPlaying ? '⏸ Pause Campaign' : '▶ Play Campaign';
                 }
             }
         }
 
-        // Global button hook helpers with robust fallback resolver
-        function getGraph(incId) {
-            return GRAPH_INSTANCES[incId] || GRAPH_INSTANCES[Number(incId)] || GRAPH_INSTANCES[String(incId)] || Object.values(GRAPH_INSTANCES)[0];
-        }
-
+        // Global Action Proxies for HTML Button Handlers
         function togglePlay(incId) {
-            const g = getGraph(incId);
-            if (g) g.isPlaying ? g.pause() : g.play();
+            const g = GRAPH_INSTANCES[incId];
+            if (g) g.togglePlay();
         }
 
         function resetScrubber(incId) {
-            const g = getGraph(incId);
+            const g = GRAPH_INSTANCES[incId];
             if (g) g.reset();
         }
 
-        function stepScrubber(incId, delta) {
-            const g = getGraph(incId);
-            if (g) g.seek(g.tNow + delta);
+        function stepNextHop(incId) {
+            const g = GRAPH_INSTANCES[incId];
+            if (g) g.stepNextHop();
+        }
+
+        function stepPrevHop(incId) {
+            const g = GRAPH_INSTANCES[incId];
+            if (g) g.stepPrevHop();
+        }
+
+        function toggleAdaptivePacing(incId) {
+            const g = GRAPH_INSTANCES[incId];
+            if (g) g.toggleAdaptivePacing();
+        }
+
+        function setSpeed(incId, speed) {
+            const g = GRAPH_INSTANCES[incId];
+            if (g) g.setSpeed(speed);
         }
 
         function onScrubInput(incId, val) {
-            const g = getGraph(incId);
-            if (g) {
-                g.pause(); // Pause while user drags the slider
-                g.seek(parseFloat(val));
-            }
+            const g = GRAPH_INSTANCES[incId];
+            if (g) g.seek(parseFloat(val));
         }
 
         function zoomGraph(incId, factor) {
-            const g = getGraph(incId);
+            const g = GRAPH_INSTANCES[incId];
             if (g) g.zoom(factor);
         }
 
         function resetGraphView(incId) {
-            const g = getGraph(incId);
+            const g = GRAPH_INSTANCES[incId];
             if (g) g.resetView();
-        }
-
-        function togglePhysics(incId) {
-            togglePlay(incId);
         }
 
         function initAllGraphs() {
@@ -2172,20 +1421,20 @@
             if (!g) return;
             if (e.code === 'Space') {
                 e.preventDefault();
-                g.isPlaying ? g.pause() : g.play();
+                g.togglePlay();
             } else if (e.code === 'KeyR' || e.code === 'Home') {
                 e.preventDefault();
                 g.reset();
-            } else if (e.code === 'ArrowLeft') {
-                e.preventDefault();
-                g.seek(g.tNow - 15);
             } else if (e.code === 'ArrowRight') {
                 e.preventDefault();
-                g.seek(g.tNow + 15);
+                g.stepNextHop();
+            } else if (e.code === 'ArrowLeft') {
+                e.preventDefault();
+                g.stepPrevHop();
             }
         });
 
-        // Safe initialization handling whether DOM is still loading or already parsed
+        window.initAllGraphs = initAllGraphs;
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', initAllGraphs);
         } else {

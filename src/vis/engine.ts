@@ -19,6 +19,10 @@
  *    - Auto-deceleration on critical MITRE milestones
  *    - Milestone Hop Stepper API ("Next Critical Hop" / "Previous Critical Hop")
  *    - Forensic Briefing Cards with presenter talking points
+ * 5. Interactive Inspection & Anti-Collision Badging:
+ *    - High-contrast anti-collision pill badges
+ *    - Settled causal infection edges with directional attack flow
+ *    - Smooth panning and zooming with interactive entity hit-testing
  */
 
 import type {
@@ -111,6 +115,20 @@ export interface RenderedNode extends PlacedNode {
     archetype?: SubnetArchetype;
 }
 
+export interface SettledEdge {
+    sourceId: string;
+    targetId: string;
+    fromX: number;
+    fromY: number;
+    toX: number;
+    toY: number;
+    color: string;
+    isCrossSubnet: boolean;
+    criticality: number;
+    progress: number;
+    label?: string;
+}
+
 export interface FrameSnapshot {
     t: number;
     camera: CameraState;
@@ -119,6 +137,7 @@ export interface FrameSnapshot {
     nodes: RenderedNode[];
     tethers: TetherCurve[];
     exploratoryTethers: ExploratoryTetherState[];
+    settledEdges: SettledEdge[];
     wavefront: WavefrontArc;
     totalActive: number;
     totalEstate: number;
@@ -141,6 +160,13 @@ export class CausalTerritorialEngine {
     public subnetArchetypes: Map<string, SubnetArchetype> = new Map();
     public playbackEngine: PresenterPlaybackEngine | null = null;
 
+    // Interactive Camera Transform Overrides
+    public panX: number = 0;
+    public panY: number = 0;
+    public userZoom: number = 1.0;
+    public hoverNodeId: string | null = null;
+    public selectedNodeId: string | null = null;
+
     constructor(options: EngineOptions = {}) {
         this.territoryEngine = new CausalTerritoryEngine(options.territory, options.seed ?? 1337);
         if (options.patientZero) {
@@ -154,13 +180,13 @@ export class CausalTerritorialEngine {
      */
     public assignSubnetArchetype(clusterId: string): SubnetArchetype {
         const lower = clusterId.toLowerCase();
-        if (lower.includes('dmz') || lower.includes('ingress') || lower.includes('edge') || lower.includes('wan')) {
+        if (lower.includes('dmz') || lower.includes('ingress') || lower.includes('edge') || lower.includes('wan') || lower.includes('perimeter')) {
             return 'PERIMETER_DMZ';
         }
-        if (lower.includes('dc') || lower.includes('domain') || lower.includes('auth') || lower.includes('jewel') || lower.includes('vault')) {
+        if (lower.includes('dc') || lower.includes('domain') || lower.includes('auth') || lower.includes('jewel') || lower.includes('vault') || lower.includes('99.') || lower.includes('identity')) {
             return 'CROWN_JEWELS_AD';
         }
-        if (lower.includes('server') || lower.includes('data') || lower.includes('db') || lower.includes('cluster') || lower.includes('k8s') || lower.includes('prod')) {
+        if (lower.includes('server') || lower.includes('data') || lower.includes('db') || lower.includes('cluster') || lower.includes('k8s') || lower.includes('prod') || lower.includes('rack')) {
             return 'SERVER_CLUSTER';
         }
         return 'WORKSTATION_POOL';
@@ -169,7 +195,7 @@ export class CausalTerritorialEngine {
     /**
      * Ingests chronological events with heterogeneous archetype placement.
      */
-    public ingest(events: NodeEvent[]): PlacedNode[] {
+    public ingest(events: NodeEvent[], customBriefings?: ForensicBriefingCard[]): PlacedNode[] {
         this.events = [...events].sort((a, b) => a.t - b.t);
         this.nodes = [];
         this.nodeMap.clear();
@@ -223,7 +249,13 @@ export class CausalTerritorialEngine {
                 budY: parentPos.y,
                 birthTime: ev.t,
                 slotIndex: currentIdx,
-                criticality: ev.criticality ?? 0.5
+                criticality: ev.criticality ?? 0.5,
+                type: ev.type,
+                label: ev.label,
+                mitreTactic: ev.mitreTactic,
+                mitreTechId: ev.mitreTechId,
+                mitreTechName: ev.mitreTechName,
+                evidence: ev.evidence
             };
 
             this.nodes.push(placed);
@@ -236,32 +268,38 @@ export class CausalTerritorialEngine {
         this.quadtree = new TemporalAggregateQuadtree(this.nodes);
 
         // Build Presenter Playback Engine & Forensic Briefings
-        this.initPresenterEngine();
+        this.initPresenterEngine(customBriefings);
 
         return this.nodes;
     }
 
-    private initPresenterEngine(): void {
+    public initPresenterEngine(customBriefings?: ForensicBriefingCard[]): void {
         const attackEvents: CausalAttackEvent[] = this.nodes.map((n, i) => {
             const arch = this.subnetArchetypes.get(n.cluster) || 'WORKSTATION_POOL';
             const isCritical = n.criticality >= 0.75 || i === 0 || i === this.nodes.length - 1;
 
-            let tactic: any = 'LATERAL_MOVEMENT';
-            let techId = 'T1021.002';
-            let techName = 'SMB/Windows Admin Shares';
+            let tactic: any = n.mitreTactic || 'LATERAL_MOVEMENT';
+            let techId = n.mitreTechId || 'T1021.002';
+            let techName = n.mitreTechName || 'SMB/Windows Admin Shares';
 
-            if (i === 0) {
-                tactic = 'INITIAL_ACCESS';
-                techId = 'T1566.001';
-                techName = 'Spearphishing Attachment';
-            } else if (arch === 'CROWN_JEWELS_AD') {
-                tactic = 'IMPACT';
-                techId = 'T1003.006';
-                techName = 'DCSync / Active Directory Shadow';
-            } else if (n.criticality >= 0.8) {
-                tactic = 'PRIVILEGE_ESCALATION';
-                techId = 'T1068';
-                techName = 'Token Elevation via CVE-2024-Exploit';
+            if (!n.mitreTechName) {
+                if (i === 0 || n.type === 'WAN') {
+                    tactic = 'INITIAL_ACCESS';
+                    techId = 'T1566.001';
+                    techName = 'Spearphishing Attachment';
+                } else if (arch === 'CROWN_JEWELS_AD' || n.type === 'DC') {
+                    tactic = 'IMPACT';
+                    techId = 'T1003.006';
+                    techName = 'DCSync / Active Directory Shadow';
+                } else if (n.type === 'C2') {
+                    tactic = 'COMMAND_AND_CONTROL';
+                    techId = 'T1071.001';
+                    techName = 'Web Protocols (C2 Beacon)';
+                } else if (n.type === 'USER' || n.criticality >= 0.8) {
+                    tactic = 'CREDENTIAL_ACCESS';
+                    techId = 'T1003';
+                    techName = 'OS Credential Dumping';
+                }
             }
 
             const parentNode = n.parent ? this.nodeMap.get(n.parent) : null;
@@ -288,7 +326,56 @@ export class CausalTerritorialEngine {
             };
         });
 
-        this.playbackEngine = new PresenterPlaybackEngine(attackEvents);
+        this.playbackEngine = new PresenterPlaybackEngine(attackEvents, customBriefings);
+    }
+
+    /**
+     * Coordinate conversions for user interaction
+     */
+    public screenToWorld(sx: number, sy: number, width: number, height: number, t: number): Point2D {
+        const cameraState = this.camera.getCameraState(this.nodes, t, width, height, this.nodes);
+        const effZoom = cameraState.zoom * this.userZoom;
+        const effFocusX = cameraState.focusX + this.panX;
+        const effFocusY = cameraState.focusY + this.panY;
+
+        return {
+            x: (sx - width / 2) / effZoom + effFocusX,
+            y: (sy - height / 2) / effZoom + effFocusY
+        };
+    }
+
+    public getNodeAt(sx: number, sy: number, width: number, height: number, t: number): RenderedNode | null {
+        const wPos = this.screenToWorld(sx, sy, width, height, t);
+        const snapshot = this.getStateAt(t, width, height);
+
+        for (let i = snapshot.nodes.length - 1; i >= 0; i--) {
+            const n = snapshot.nodes[i];
+            const r = (n.archetype === 'CROWN_JEWELS_AD' || n.type === 'DC' ? 14 : 10) * n.scale + 8;
+            const dist = Math.hypot(wPos.x - n.currentX, wPos.y - n.currentY);
+            if (dist <= r) {
+                return n;
+            }
+        }
+        return null;
+    }
+
+    public pan(dx: number, dy: number, width: number, height: number, t: number): void {
+        const cameraState = this.camera.getCameraState(this.nodes, t, width, height, this.nodes);
+        const effZoom = cameraState.zoom * this.userZoom;
+        this.panX -= dx / effZoom;
+        this.panY -= dy / effZoom;
+    }
+
+    public zoom(factor: number): void {
+        this.userZoom = Math.max(0.2, Math.min(6.0, this.userZoom * factor));
+    }
+
+    public resetView(): void {
+        this.panX = 0;
+        this.panY = 0;
+        this.userZoom = 1.0;
+        this.hoverNodeId = null;
+        this.selectedNodeId = null;
     }
 
     /**
@@ -303,28 +390,33 @@ export class CausalTerritorialEngine {
             this.nodes
         );
 
-        const halfW = (viewportWidth / 2) / cameraState.zoom;
-        const halfH = (viewportHeight / 2) / cameraState.zoom;
+        const effZoom = cameraState.zoom * this.userZoom;
+        const halfW = (viewportWidth / 2) / effZoom;
+        const halfH = (viewportHeight / 2) / effZoom;
         const viewportBounds: BoundingBox = {
-            minX: cameraState.focusX - halfW,
-            minY: cameraState.focusY - halfH,
-            maxX: cameraState.focusX + halfW,
-            maxY: cameraState.focusY + halfH
+            minX: cameraState.focusX + this.panX - halfW,
+            minY: cameraState.focusY + this.panY - halfH,
+            maxX: cameraState.focusX + this.panX + halfW,
+            maxY: cameraState.focusY + this.panY + halfH
         };
 
         const lodResult: LODQueryResult = this.quadtree
-            ? this.quadtree.query(viewportBounds, t, cameraState.zoom)
+            ? this.quadtree.query(viewportBounds, t, effZoom)
             : { aggregates: [], nodes: [], totalActive: 0 };
 
         const renderedNodes: RenderedNode[] = [];
         const tethers: TetherCurve[] = [];
         const exploratoryTethers: ExploratoryTetherState[] = [];
+        const settledEdges: SettledEdge[] = [];
+
+        // Build active position map for fast edge endpoint resolution
+        const currentPosMap = new Map<string, { x: number; y: number }>();
 
         for (const vn of lodResult.nodes) {
             const budState = getBudState(vn.node, t);
             if (budState.isBorn) {
                 const arch = this.subnetArchetypes.get(vn.node.cluster);
-                renderedNodes.push({
+                const rNode: RenderedNode = {
                     ...vn.node,
                     currentX: budState.x,
                     currentY: budState.y,
@@ -333,13 +425,15 @@ export class CausalTerritorialEngine {
                     isSettling: budState.isSettling,
                     alpha: vn.alpha,
                     archetype: arch
-                });
+                };
+                renderedNodes.push(rNode);
+                currentPosMap.set(vn.node.id, { x: budState.x, y: budState.y });
 
                 if (budState.isSettling) {
                     const tether = getTetherCurve(vn.node, t);
                     if (tether) tethers.push(tether);
 
-                    // Also compute 3-phase exploratory probing tether with vanishing curl
+                    // 3-phase exploratory probing tether with vanishing curl
                     const expTether = getExploratoryTether(
                         { x: vn.node.budX, y: vn.node.budY },
                         { x: vn.node.x, y: vn.node.y },
@@ -349,6 +443,33 @@ export class CausalTerritorialEngine {
                         vn.node.slotIndex * 137
                     );
                     if (expTether) exploratoryTethers.push(expTether);
+                }
+
+                // If parent exists and is born, record settled causal edge
+                if (vn.node.parent) {
+                    const parentNode = this.nodeMap.get(vn.node.parent);
+                    if (parentNode && t >= parentNode.birthTime) {
+                        const parentBud = getBudState(parentNode, t);
+                        let edgeColor = '#38bdf8';
+                        if (vn.node.archetype === 'CROWN_JEWELS_AD' || vn.node.type === 'DC') edgeColor = '#f43f5e';
+                        else if (vn.node.type === 'C2') edgeColor = '#a855f7';
+                        else if (vn.node.type === 'USER') edgeColor = '#f59e0b';
+                        else if (vn.node.criticality >= 0.75) edgeColor = '#f59e0b';
+
+                        settledEdges.push({
+                            sourceId: vn.node.parent,
+                            targetId: vn.node.id,
+                            fromX: parentBud.x,
+                            fromY: parentBud.y,
+                            toX: budState.x,
+                            toY: budState.y,
+                            color: edgeColor,
+                            isCrossSubnet: parentNode.cluster !== vn.node.cluster,
+                            criticality: vn.node.criticality,
+                            progress: budState.progress,
+                            label: vn.node.mitreTechName
+                        });
+                    }
                 }
             }
         }
@@ -367,6 +488,7 @@ export class CausalTerritorialEngine {
             nodes: renderedNodes,
             tethers,
             exploratoryTethers,
+            settledEdges,
             wavefront,
             totalActive: lodResult.totalActive,
             totalEstate: this.nodes.length
@@ -374,7 +496,8 @@ export class CausalTerritorialEngine {
     }
 
     /**
-     * Pure Canvas 2D render pass with heterogeneous archetypes and exploratory probing tethers.
+     * Pure Canvas 2D render pass with heterogeneous archetypes, exploratory tethers,
+     * settled causal edges, and anti-collision rounded pill badges.
      */
     public render(
         ctx: any,
@@ -383,14 +506,17 @@ export class CausalTerritorialEngine {
         height: number
     ): FrameSnapshot {
         const snapshot = this.getStateAt(t, width, height);
+        const effZoom = snapshot.camera.zoom * this.userZoom;
+        const effFocusX = snapshot.camera.focusX + this.panX;
+        const effFocusY = snapshot.camera.focusY + this.panY;
 
         ctx.fillStyle = '#070b14';
         ctx.fillRect(0, 0, width, height);
 
         ctx.save();
         ctx.translate(width / 2, height / 2);
-        ctx.scale(snapshot.camera.zoom, snapshot.camera.zoom);
-        ctx.translate(-snapshot.camera.focusX, -snapshot.camera.focusY);
+        ctx.scale(effZoom, effZoom);
+        ctx.translate(-effFocusX, -effFocusY);
 
         // 1. Draw Heterogeneous Territory Boundaries
         for (const [clusterId, territory] of this.territoryEngine.clusters.entries()) {
@@ -402,39 +528,39 @@ export class CausalTerritorialEngine {
 
             if (arch === 'PERIMETER_DMZ') {
                 // Curvilinear ribbon / boundary fence
-                ctx.strokeStyle = 'rgba(56, 189, 248, 0.25)';
-                ctx.lineWidth = 1.2 / snapshot.camera.zoom;
-                ctx.strokeRect(seed.x - 180, seed.y - 45, 360, 90);
+                ctx.strokeStyle = 'rgba(56, 189, 248, 0.28)';
+                ctx.lineWidth = 1.2 / effZoom;
+                ctx.strokeRect(seed.x - 180, seed.y - 50, 360, 100);
                 ctx.fillStyle = '#38bdf8';
                 ctx.font = 'bold 9px monospace';
-                ctx.fillText(`PERIMETER DMZ FENCE: ${clusterId.toUpperCase()}`, seed.x - 170, seed.y - 52);
+                ctx.fillText(`PERIMETER DMZ FENCE: ${clusterId.toUpperCase()}`, seed.x - 170, seed.y - 58);
             } else if (arch === 'CROWN_JEWELS_AD') {
                 // Concentric Bastion Rings + Moat
-                ctx.strokeStyle = 'rgba(244, 63, 94, 0.35)';
-                ctx.lineWidth = 1.5 / snapshot.camera.zoom;
+                ctx.strokeStyle = 'rgba(244, 63, 94, 0.4)';
+                ctx.lineWidth = 1.5 / effZoom;
                 ctx.beginPath();
                 ctx.arc(seed.x, seed.y, 45, 0, Math.PI * 2);
                 ctx.stroke();
 
                 ctx.beginPath();
-                ctx.arc(seed.x, seed.y, 105, 0, Math.PI * 2);
+                ctx.arc(seed.x, seed.y, 110, 0, Math.PI * 2);
                 ctx.stroke();
 
                 ctx.fillStyle = '#f43f5e';
                 ctx.font = 'bold 9px monospace';
-                ctx.fillText(`TIER-0 CROWN MOAT: ${clusterId.toUpperCase()}`, seed.x, seed.y - 114);
+                ctx.fillText(`TIER-0 CROWN MOAT: ${clusterId.toUpperCase()}`, seed.x, seed.y - 120);
             } else if (arch === 'SERVER_CLUSTER') {
                 // Server rack aisle grid
-                ctx.strokeStyle = 'rgba(168, 85, 247, 0.22)';
-                ctx.lineWidth = 1.0 / snapshot.camera.zoom;
+                ctx.strokeStyle = 'rgba(168, 85, 247, 0.25)';
+                ctx.lineWidth = 1.0 / effZoom;
                 ctx.strokeRect(seed.x - 10, seed.y - 10, 160, 180);
                 ctx.fillStyle = '#a855f7';
                 ctx.font = 'bold 9px monospace';
                 ctx.fillText(`DATACENTER RACK: ${clusterId.toUpperCase()}`, seed.x, seed.y - 18);
             } else {
                 // Workstation pool fan
-                ctx.strokeStyle = 'rgba(148, 163, 184, 0.18)';
-                ctx.lineWidth = 1.0 / snapshot.camera.zoom;
+                ctx.strokeStyle = 'rgba(148, 163, 184, 0.2)';
+                ctx.lineWidth = 1.0 / effZoom;
                 ctx.beginPath();
                 ctx.arc(seed.x, seed.y, seed.reservedRadius, 0, Math.PI * 2);
                 ctx.stroke();
@@ -457,14 +583,60 @@ export class CausalTerritorialEngine {
                 0,
                 Math.PI * 2
             );
-            ctx.strokeStyle = 'rgba(239, 68, 68, 0.22)';
-            ctx.lineWidth = 2.0 / snapshot.camera.zoom;
+            ctx.strokeStyle = 'rgba(239, 68, 68, 0.25)';
+            ctx.lineWidth = 2.0 / effZoom;
             ctx.setLineDash([6, 8]);
             ctx.stroke();
             ctx.restore();
         }
 
-        // 3. Draw Exploratory Probing Tethers & Decoy Tendrils
+        // 3. Draw Settled Causal Edges & Lateral Attack Links
+        for (const edge of snapshot.settledEdges) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.moveTo(edge.fromX, edge.fromY);
+
+            // Slight curve for long cross-subnet hops to prevent straight overlaps
+            if (edge.isCrossSubnet) {
+                const midX = (edge.fromX + edge.toX) / 2;
+                const midY = (edge.fromY + edge.toY) / 2 - 25;
+                ctx.quadraticCurveTo(midX, midY, edge.toX, edge.toY);
+            } else {
+                ctx.lineTo(edge.toX, edge.toY);
+            }
+
+            ctx.strokeStyle = edge.color;
+            ctx.globalAlpha = Math.min(0.85, 0.25 + 0.6 * edge.progress);
+            ctx.lineWidth = (edge.criticality >= 0.75 ? 2.2 : 1.4) / effZoom;
+            if (edge.isCrossSubnet) {
+                ctx.setLineDash([5, 4]);
+            }
+            ctx.stroke();
+
+            // Directional arrow pointer near destination
+            const dx = edge.toX - edge.fromX;
+            const dy = edge.toY - edge.fromY;
+            const len = Math.hypot(dx, dy);
+            if (len > 35) {
+                const angle = Math.atan2(dy, dx);
+                const arrowDist = 18; // offset from target node radius
+                const ax = edge.toX - Math.cos(angle) * arrowDist;
+                const ay = edge.toY - Math.sin(angle) * arrowDist;
+                const headLen = 6 / effZoom;
+
+                ctx.fillStyle = edge.color;
+                ctx.beginPath();
+                ctx.moveTo(ax, ay);
+                ctx.lineTo(ax - headLen * Math.cos(angle - Math.PI / 6), ay - headLen * Math.sin(angle - Math.PI / 6));
+                ctx.lineTo(ax - headLen * Math.cos(angle + Math.PI / 6), ay - headLen * Math.sin(angle + Math.PI / 6));
+                ctx.closePath();
+                ctx.fill();
+            }
+
+            ctx.restore();
+        }
+
+        // 4. Draw Exploratory Probing Tethers & Decoy Tendrils (Dynamic Emergence)
         for (const exp of snapshot.exploratoryTethers) {
             // Draw decoy feelers
             for (const dec of exp.decoys) {
@@ -473,7 +645,7 @@ export class CausalTerritorialEngine {
                 ctx.moveTo(exp.curvePoints[0]?.x || 0, exp.curvePoints[0]?.y || 0);
                 ctx.lineTo(dec.currentX, dec.currentY);
                 ctx.strokeStyle = dec.isBlocked ? `rgba(239, 68, 68, ${dec.opacity})` : `rgba(148, 163, 184, ${dec.opacity})`;
-                ctx.lineWidth = 0.9 / snapshot.camera.zoom;
+                ctx.lineWidth = 0.9 / effZoom;
                 ctx.setLineDash([3, 4]);
                 ctx.stroke();
                 ctx.restore();
@@ -490,13 +662,13 @@ export class CausalTerritorialEngine {
                 const color = exp.phase === 'SNAP' ? '#ef4444' : (exp.phase === 'LOCK_ON' ? '#f59e0b' : '#38bdf8');
                 ctx.strokeStyle = color;
                 ctx.globalAlpha = exp.opacity;
-                ctx.lineWidth = (exp.phase === 'SNAP' ? 2.5 : 1.5) / snapshot.camera.zoom;
+                ctx.lineWidth = (exp.phase === 'SNAP' ? 2.5 : 1.5) / effZoom;
                 ctx.stroke();
                 ctx.restore();
             }
         }
 
-        // 4. Draw Aggregates (LOD Supernodes)
+        // 5. Draw Aggregates (LOD Supernodes when zoomed far out)
         for (const agg of snapshot.aggregates) {
             ctx.save();
             ctx.globalAlpha = agg.alpha;
@@ -508,45 +680,128 @@ export class CausalTerritorialEngine {
             ctx.arc(agg.centerOfMass.x, agg.centerOfMass.y, radius, 0, Math.PI * 2);
             ctx.fillStyle = '#1e1b4b';
             ctx.strokeStyle = '#ef4444';
-            ctx.lineWidth = 2.5 / snapshot.camera.zoom;
+            ctx.lineWidth = 2.5 / effZoom;
             ctx.fill();
             ctx.stroke();
 
             ctx.fillStyle = '#f8fafc';
-            ctx.font = `bold ${Math.max(10, 12 / snapshot.camera.zoom)}px monospace`;
+            ctx.font = `bold ${Math.max(10, 12 / effZoom)}px monospace`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(`${agg.activeCount}`, agg.centerOfMass.x, agg.centerOfMass.y);
             ctx.restore();
         }
 
-        // 5. Draw Individual Nodes (High LOD)
+        // 6. Draw Individual Nodes & High-Contrast Anti-Collision Badges (High LOD)
         for (const n of snapshot.nodes) {
             ctx.save();
             ctx.globalAlpha = n.alpha;
 
-            const r = (n.archetype === 'CROWN_JEWELS_AD' ? 12 : 9) * n.scale;
-            if (r > 0.5) {
-                let color = '#38bdf8';
-                if (n.archetype === 'CROWN_JEWELS_AD') color = '#f43f5e';
-                else if (n.criticality >= 0.75) color = '#f59e0b';
-                else if (n.archetype === 'SERVER_CLUSTER') color = '#a855f7';
+            const isCrown = n.archetype === 'CROWN_JEWELS_AD' || n.type === 'DC';
+            const r = (isCrown ? 13 : 9) * n.scale;
 
+            if (r > 0.5) {
+                let color = '#38bdf8'; // Host / default
+                let typeCode = 'HOST';
+
+                if (isCrown) {
+                    color = '#f43f5e';
+                    typeCode = 'DC';
+                } else if (n.type === 'C2') {
+                    color = '#a855f7';
+                    typeCode = 'C2';
+                } else if (n.type === 'WAN') {
+                    color = '#ef4444';
+                    typeCode = 'WAN';
+                } else if (n.type === 'USER') {
+                    color = '#f59e0b';
+                    typeCode = 'USER';
+                } else if (n.type === 'PEER') {
+                    color = '#64748b';
+                    typeCode = 'PEER';
+                } else if (n.criticality >= 0.75) {
+                    color = '#f59e0b';
+                    typeCode = 'HOST';
+                }
+
+                const isHovered = n.id === this.hoverNodeId;
+                const isSelected = n.id === this.selectedNodeId;
+
+                // Pulsing highlight ring on hover / selection
+                if (isHovered || isSelected) {
+                    ctx.beginPath();
+                    ctx.arc(n.currentX, n.currentY, r + 5, 0, Math.PI * 2);
+                    ctx.strokeStyle = isSelected ? '#38bdf8' : '#f59e0b';
+                    ctx.lineWidth = 2.0 / effZoom;
+                    ctx.stroke();
+                }
+
+                // Node Circle Fill & Stroke
                 ctx.beginPath();
                 ctx.arc(n.currentX, n.currentY, r, 0, Math.PI * 2);
                 ctx.fillStyle = color;
                 ctx.fill();
                 ctx.strokeStyle = '#ffffff';
-                ctx.lineWidth = 1.5 / snapshot.camera.zoom;
+                ctx.lineWidth = 1.5 / effZoom;
                 ctx.stroke();
 
+                // Concentric inner ring for crown jewels (Tier-0 Domain Controller)
+                if (isCrown) {
+                    ctx.beginPath();
+                    ctx.arc(n.currentX, n.currentY, r * 0.6, 0, Math.PI * 2);
+                    ctx.strokeStyle = '#ffffff';
+                    ctx.lineWidth = 1.0 / effZoom;
+                    ctx.stroke();
+                }
+
+                // Settling Shockwave Ripple
                 if (n.isSettling) {
                     ctx.beginPath();
                     ctx.arc(n.currentX, n.currentY, r * (1.2 + 0.8 * (1.0 - n.progress)), 0, Math.PI * 2);
                     ctx.strokeStyle = `rgba(245, 158, 11, ${1.0 - n.progress})`;
-                    ctx.lineWidth = 1.0 / snapshot.camera.zoom;
+                    ctx.lineWidth = 1.0 / effZoom;
                     ctx.stroke();
                 }
+
+                // Short Type Code Inside Circle
+                if (r >= 8) {
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = `bold ${Math.max(7, Math.min(10, 8.5 / effZoom))}px monospace`;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(typeCode, n.currentX, n.currentY);
+                }
+
+                // Anti-Collision Dark Rounded Pill Badge Underneath Node
+                const labelStr = n.label || n.id;
+                const timeStr = `T+${Math.round(n.birthTime)}m`;
+                const displayStr = `${labelStr} [${timeStr}]`;
+
+                ctx.font = 'bold 9px monospace';
+                const strW = ctx.measureText(displayStr).width;
+                const badgeW = strW + 12;
+                const badgeH = 16;
+                const badgeX = n.currentX - badgeW / 2;
+                const badgeY = n.currentY + r + 4;
+
+                ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+                ctx.strokeStyle = isSelected ? '#38bdf8' : (isCrown ? 'rgba(244, 63, 94, 0.6)' : 'rgba(51, 65, 85, 0.85)');
+                ctx.lineWidth = 1.0 / effZoom;
+
+                if (typeof ctx.roundRect === 'function') {
+                    ctx.beginPath();
+                    ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 3);
+                    ctx.fill();
+                    ctx.stroke();
+                } else {
+                    ctx.fillRect(badgeX, badgeY, badgeW, badgeH);
+                    ctx.strokeRect(badgeX, badgeY, badgeW, badgeH);
+                }
+
+                ctx.fillStyle = isCrown ? '#fca5a5' : '#f8fafc';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(displayStr, n.currentX, badgeY + badgeH / 2);
             }
 
             ctx.restore();

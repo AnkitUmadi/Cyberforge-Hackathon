@@ -26,6 +26,11 @@ export interface NodeEvent {
     t: number;
     criticality?: number;
     type?: string;
+    label?: string;
+    mitreTactic?: string;
+    mitreTechId?: string;
+    mitreTechName?: string;
+    evidence?: string;
 }
 
 export interface PlacedNode extends Point2D {
@@ -37,6 +42,12 @@ export interface PlacedNode extends Point2D {
     birthTime: number;
     slotIndex: number;
     criticality: number;
+    type?: string;
+    label?: string;
+    mitreTactic?: string;
+    mitreTechId?: string;
+    mitreTechName?: string;
+    evidence?: string;
 }
 
 /**
