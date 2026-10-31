@@ -100,7 +100,8 @@ def generate_report(db_path: str = "out/killchain.duckdb", template_path: str = 
         total_alerts=total_alerts,
         total_incidents=total_incidents,
         peak_risk_score=peak_risk_score,
-        top_incidents=top_incidents
+        top_incidents=top_incidents,
+        incidents_json=json.dumps(top_incidents)
     )
 
     # 4. Save to output path

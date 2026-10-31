@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cyberforge - Executive Attack Path & Kill Chain Incident Report</title>
+    <title>Cyberforge - Executive Attack Path & Neo4j-Style Interactive Graph</title>
     <style>
         :root {
             --bg-dark: #0a0e17;
@@ -12,6 +12,7 @@
             --accent-cyan: #06b6d4;
             --accent-red: #ef4444;
             --accent-amber: #f59e0b;
+            --accent-purple: #8b5cf6;
             --accent-emerald: #10b981;
             --text-main: #f3f4f6;
             --text-muted: #94a3b8;
@@ -125,7 +126,7 @@
             font-size: 1rem;
             font-weight: 700;
             color: var(--accent-cyan);
-            margin: 20px 0 10px 0;
+            margin: 24px 0 12px 0;
             display: flex;
             align-items: center;
             gap: 8px;
@@ -155,16 +156,124 @@
 
         .timeline-table tr:hover { background: #151e2e; }
 
-        /* Graph SVG Container */
-        .graph-box {
-            background: #0d131f;
-            border: 1px solid var(--panel-border);
+        /* NEO4J-STYLE GRAPH WORKSPACE */
+        .neo4j-graph-wrapper {
+            display: grid;
+            grid-template-columns: 1fr 300px;
+            gap: 16px;
+            background: #080d16;
+            border: 1px solid #1f293d;
             border-radius: 8px;
-            padding: 20px;
+            padding: 16px;
             margin-bottom: 25px;
+            position: relative;
+        }
+
+        .canvas-container {
+            position: relative;
+            height: 480px;
+            background: radial-gradient(circle at center, #0f172a 0%, #080d16 100%);
+            border: 1px solid #1e293b;
+            border-radius: 6px;
+            overflow: hidden;
+            cursor: grab;
+        }
+
+        .canvas-container:active {
+            cursor: grabbing;
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .graph-controls {
+            position: absolute;
+            bottom: 12px;
+            left: 12px;
             display: flex;
-            justify-content: center;
+            gap: 8px;
+            z-index: 10;
+        }
+
+        .btn-graph {
+            background: rgba(30, 41, 59, 0.85);
+            border: 1px solid #334155;
+            color: #f1f5f9;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            backdrop-filter: blur(4px);
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        .btn-graph:hover {
+            background: #2563eb;
+            border-color: #3b82f6;
+        }
+
+        .graph-legend {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            display: flex;
+            gap: 12px;
+            background: rgba(15, 23, 42, 0.85);
+            border: 1px solid #1e293b;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            backdrop-filter: blur(4px);
+            z-index: 10;
+        }
+
+        .legend-item {
+            display: flex;
             align-items: center;
+            gap: 6px;
+        }
+
+        .legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+
+        /* Node Inspector Panel */
+        .node-inspector {
+            background: #0f172a;
+            border: 1px solid #1e293b;
+            border-radius: 6px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            max-height: 480px;
+        }
+
+        .inspector-title {
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: var(--accent-cyan);
+            border-bottom: 1px solid #1e293b;
+            padding-bottom: 8px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .inspector-card {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            padding: 10px;
+            margin-bottom: 10px;
+            font-size: 0.8rem;
         }
 
         /* Blast Radius Lookahead */
@@ -210,13 +319,13 @@
 
     <div class="header">
         <div>
-            <div class="brand-title">CYBERFORGE EXECUTIVE INCIDENT REPORT</div>
+            <div class="brand-title">CYBERFORGE EXECUTIVE INCIDENT DOSSIER</div>
             <div style="font-size: 0.85rem; color: var(--text-muted); margin-top: 4px;">
-                Automated Kill Chain Reconstruction & 2-Hop Lookahead Reachability Analysis
+                Interactive Neo4j-Style Attack Graph, Causal Timelines & Predictive Blast Radius
             </div>
         </div>
         <div style="text-align: right;">
-            <div style="font-size: 0.85rem; font-weight: 700; color: #fff;">Telemetry Tier: Core (15 GB Profile)</div>
+            <div style="font-size: 0.85rem; font-weight: 700; color: #fff;">Telemetry: Core (15 GB Profile)</div>
             <div style="font-size: 0.8rem; color: var(--text-muted);">Generated: {{ generated_at }}</div>
         </div>
     </div>
@@ -233,7 +342,7 @@
         </div>
         <div class="kpi-card">
             <div class="kpi-val">{{ "{:,}".format(total_incidents) }}</div>
-            <div class="kpi-lbl">Correlated Incidents</div>
+            <div class="kpi-lbl">4D Correlated Incidents</div>
         </div>
         <div class="kpi-card">
             <div class="kpi-val" style="color: var(--accent-red);">{{ peak_risk_score }} / 100</div>
@@ -247,14 +356,14 @@
 
     <!-- Top Correlated Incidents Dossiers -->
     {% for inc in top_incidents %}
-    <div class="incident-dossier">
+    <div class="incident-dossier" id="incident-{{ inc.incident_id }}">
         <div class="dossier-header">
             <div class="dossier-title">
                 <span>Incident #{{ inc.incident_id }}: {{ inc.title }}</span>
                 <span class="badge badge-{{ inc.severity }}">{{ inc.severity }}</span>
             </div>
             <div style="text-align: right;">
-                <span style="font-size: 0.9rem; font-weight: 800; color: {% if inc.risk_score >= 85 %}var(--accent-red){% else %}var(--accent-amber){% endif %};">
+                <span style="font-size: 1.1rem; font-weight: 800; color: {% if inc.risk_score >= 85 %}var(--accent-red){% else %}var(--accent-amber){% endif %};">
                     RISK SCORE: {{ inc.risk_score }} / 100
                 </span>
             </div>
@@ -263,14 +372,49 @@
         <!-- Meta Strip -->
         <div class="meta-strip">
             <div><span style="color: var(--text-muted);">Compromised Host:</span> <strong style="color: #fff;">{{ inc.root_entity }}</strong></div>
-            <div><span style="color: var(--text-muted);">Attributed User:</span> <strong style="color: var(--accent-cyan);">{{ inc.usr }}</strong></div>
-            <div><span style="color: var(--text-muted);">Primary Threat Actor IP:</span> <strong style="color: var(--accent-amber);">{{ inc.adversary_ip }}</strong></div>
-            <div><span style="color: var(--text-muted);">Active Campaign Window:</span> <strong style="color: #fff;">{{ inc.duration_minutes }} min</strong></div>
+            <div><span style="color: var(--text-muted);">Attributed User:</span> <strong style="color: var(--accent-amber);">{{ inc.usr }}</strong></div>
+            <div><span style="color: var(--text-muted);">Adversary Threat Actor IP:</span> <strong style="color: var(--accent-red);">{{ inc.adversary_ip }}</strong></div>
+            <div><span style="color: var(--text-muted);">Campaign Duration:</span> <strong style="color: #fff;">{{ inc.duration_minutes }} min</strong></div>
         </div>
 
-        <!-- VISUAL 1: ATTACK PATH TIMELINE TABLE -->
+        <!-- VISUAL 1: ATTACK PATH AS A NEO4J-STYLE INTERACTIVE FORCE-DIRECTED GRAPH -->
         <div class="section-title">
-            <span>📅</span> 1. Chronological Attack Timeline
+            <span>🕸️</span> 1. Interactive Neo4j-Style Attack Graph (Drag, Zoom, Click Nodes)
+        </div>
+        <div class="neo4j-graph-wrapper">
+            <div class="canvas-container" id="canvas-box-{{ inc.incident_id }}">
+                <div class="graph-legend">
+                    <div class="legend-item"><div class="legend-dot" style="background: #ef4444;"></div>Attacker</div>
+                    <div class="legend-item"><div class="legend-dot" style="background: #06b6d4;"></div>Compromised Host</div>
+                    <div class="legend-item"><div class="legend-dot" style="background: #f59e0b;"></div>Compromised User</div>
+                    <div class="legend-item"><div class="legend-dot" style="background: #a855f7;"></div>C2 / Exfil</div>
+                    <div class="legend-item"><div class="legend-dot" style="background: #64748b;"></div>Hop-1 Peer</div>
+                    <div class="legend-item"><div class="legend-dot" style="background: #f43f5e; border: 2px dashed #fca5a5;"></div>Hop-2 Blast Target</div>
+                </div>
+
+                <canvas id="graph-canvas-{{ inc.incident_id }}"></canvas>
+
+                <div class="graph-controls">
+                    <button class="btn-graph" onclick="zoomGraph('{{ inc.incident_id }}', 1.25)">➕ Zoom In</button>
+                    <button class="btn-graph" onclick="zoomGraph('{{ inc.incident_id }}', 0.8)">➖ Zoom Out</button>
+                    <button class="btn-graph" onclick="resetGraphView('{{ inc.incident_id }}')">⛶ Fit Graph</button>
+                    <button class="btn-graph" onclick="togglePhysics('{{ inc.incident_id }}')">⏸ Freeze Physics</button>
+                </div>
+            </div>
+
+            <!-- Side Inspector -->
+            <div class="node-inspector" id="inspector-{{ inc.incident_id }}">
+                <div class="inspector-title"><span>🔍</span> Entity Inspector</div>
+                <div style="font-size: 0.8rem; color: var(--text-muted);" id="inspector-hint-{{ inc.incident_id }}">
+                    Click any node or connection edge in the graph to inspect forensic telemetry and exposure details.
+                </div>
+                <div id="inspector-content-{{ inc.incident_id }}" style="display: none;"></div>
+            </div>
+        </div>
+
+        <!-- VISUAL 2: CHRONOLOGICAL ATTACK TIMELINE TABLE -->
+        <div class="section-title">
+            <span>📅</span> 2. Chronological Attack Timeline
         </div>
         <table class="timeline-table">
             <thead>
@@ -298,72 +442,6 @@
                 {% endfor %}
             </tbody>
         </table>
-
-        <!-- VISUAL 2: ATTACK PATH AS A GRAPH OF HOSTS AND USERS -->
-        <div class="section-title">
-            <span>🕸️</span> 2. Attack Path Graph (Host, User & Infrastructure Propagation)
-        </div>
-        <div class="graph-box">
-            <svg width="860" height="150" viewBox="0 0 860 150" xmlns="http://www.w3.org/2000/svg">
-                <defs>
-                    <marker id="arrow-{{ inc.incident_id }}" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                        <path d="M 0 0 L 10 5 L 0 10 z" fill="#06b6d4" />
-                    </marker>
-                </defs>
-
-                <!-- Node 1: External Adversary -->
-                <g transform="translate(60, 75)">
-                    <circle r="32" fill="#1e293b" stroke="#ef4444" stroke-width="2.5" />
-                    <text y="-5" text-anchor="middle" fill="#ef4444" font-weight="700" font-size="11">ADVERSARY</text>
-                    <text y="12" text-anchor="middle" fill="#fca5a5" font-family="monospace" font-size="9">{{ inc.adversary_ip[:12] }}</text>
-                </g>
-
-                <!-- Arrow 1 -> 2 -->
-                <line x1="97" y1="75" x2="213" y2="75" stroke="#06b6d4" stroke-width="2" marker-end="url(#arrow-{{ inc.incident_id }})" />
-                <text x="155" y="65" text-anchor="middle" fill="#06b6d4" font-size="10" font-weight="600">Initial Exploit (T1190)</text>
-
-                <!-- Node 2: Compromised DMZ Host -->
-                <g transform="translate(250, 75)">
-                    <rect x="-42" y="-32" width="84" height="64" rx="8" fill="#1e293b" stroke="#06b6d4" stroke-width="2.5" />
-                    <text y="-8" text-anchor="middle" fill="#06b6d4" font-weight="700" font-size="11">DMZ HOST</text>
-                    <text y="8" text-anchor="middle" fill="#fff" font-family="monospace" font-size="10">{{ inc.root_entity }}</text>
-                    <text y="22" text-anchor="middle" fill="#94a3b8" font-size="8">Public Facing</text>
-                </g>
-
-                <!-- Arrow 2 -> 3 -->
-                <line x1="297" y1="75" x2="413" y2="75" stroke="#06b6d4" stroke-width="2" marker-end="url(#arrow-{{ inc.incident_id }})" />
-                <text x="355" y="65" text-anchor="middle" fill="#06b6d4" font-size="10" font-weight="600">PrivEsc (T1068)</text>
-
-                <!-- Node 3: Attributed User / Privilege Account -->
-                <g transform="translate(450, 75)">
-                    <circle r="32" fill="#1e293b" stroke="#f59e0b" stroke-width="2.5" />
-                    <text y="-5" text-anchor="middle" fill="#f59e0b" font-weight="700" font-size="11">USER / PRIV</text>
-                    <text y="12" text-anchor="middle" fill="#fde68a" font-family="monospace" font-size="9">{{ inc.usr }}</text>
-                </g>
-
-                <!-- Arrow 3 -> 4 -->
-                <line x1="487" y1="75" x2="603" y2="75" stroke="#06b6d4" stroke-width="2" marker-end="url(#arrow-{{ inc.incident_id }})" />
-                <text x="545" y="65" text-anchor="middle" fill="#06b6d4" font-size="10" font-weight="600">C2 Beacon (T1071)</text>
-
-                <!-- Node 4: Exfiltration & C2 Server -->
-                <g transform="translate(640, 75)">
-                    <rect x="-42" y="-32" width="84" height="64" rx="8" fill="#1e293b" stroke="#ef4444" stroke-width="2.5" />
-                    <text y="-8" text-anchor="middle" fill="#ef4444" font-weight="700" font-size="11">C2 EXFIL</text>
-                    <text y="8" text-anchor="middle" fill="#fff" font-family="monospace" font-size="9">C2 Channel</text>
-                    <text y="22" text-anchor="middle" fill="#f87171" font-size="8">5MB+ Exfiltrated</text>
-                </g>
-
-                <!-- Arrow 4 -> 5 -->
-                <line x1="687" y1="75" x2="763" y2="75" stroke="#ef4444" stroke-width="2" stroke-dasharray="4" marker-end="url(#arrow-{{ inc.incident_id }})" />
-
-                <!-- Node 5: Hop 2 At-Risk Blast Asset -->
-                <g transform="translate(800, 75)">
-                    <circle r="28" fill="#3f1212" stroke="#ef4444" stroke-width="2" />
-                    <text y="-4" text-anchor="middle" fill="#ef4444" font-weight="800" font-size="10">DC 99.1</text>
-                    <text y="10" text-anchor="middle" fill="#fca5a5" font-size="8">AT RISK</text>
-                </g>
-            </svg>
-        </div>
 
         <!-- SECTION 3: WHAT THE ATTACKER COULD REACH NEXT (LOOKAHEAD BLAST RADIUS) -->
         <div class="section-title">
@@ -418,5 +496,523 @@
     </div>
     {% endfor %}
 
+    <!-- Standalone Force-Directed Graph Engine Script -->
+    <script>
+        const GRAPH_INSTANCES = {};
+        const INCIDENTS_DATA = {{ incidents_json | safe }};
+
+        class InteractiveForceGraph {
+            constructor(canvasId, incidentData) {
+                this.canvas = document.getElementById(canvasId);
+                this.ctx = this.canvas.getContext('2d');
+                this.data = incidentData;
+                this.incId = incidentData.incident_id;
+                this.nodes = [];
+                this.edges = [];
+                this.selectedNode = null;
+                this.hoveredNode = null;
+                this.draggedNode = null;
+                this.isPhysicsRunning = true;
+                this.panX = 0;
+                this.panY = 0;
+                this.zoom = 1.0;
+                this.isPanning = false;
+                this.panStartX = 0;
+                this.panStartY = 0;
+
+                this.initGraph();
+                this.resizeCanvas();
+                this.setupEvents();
+                this.startSimulation();
+            }
+
+            initGraph() {
+                const inc = this.data;
+                const nodeMap = {};
+
+                const addNode = (id, label, type, role, criticality) => {
+                    if (!nodeMap[id]) {
+                        const n = {
+                            id: id,
+                            label: label,
+                            type: type,
+                            role: role,
+                            criticality: criticality,
+                            x: (Math.random() - 0.5) * 360,
+                            y: (Math.random() - 0.5) * 240,
+                            vx: 0,
+                            vy: 0,
+                            radius: type === 'host' ? 28 : type === 'dc' ? 30 : type === 'peer' ? 20 : 25
+                        };
+                        this.nodes.push(n);
+                        nodeMap[id] = n;
+                    }
+                    return nodeMap[id];
+                };
+
+                // 1. External Threat Actor (Adversary)
+                const nAdv = addNode(inc.adversary_ip, inc.adversary_ip, 'adversary', 'External Adversary IP', 'CRITICAL');
+
+                // 2. Compromised Root Host (DMZ Server)
+                const nHost = addNode(inc.root_entity, inc.root_entity, 'host', 'Compromised DMZ Server', 'HIGH (Direct Foothold)');
+
+                // 3. User Identity
+                const userName = (inc.usr && inc.usr !== 'unauthenticated') ? inc.usr : 'admin_svc';
+                const nUser = addNode('user-' + userName, userName, 'user', 'Compromised Identity', 'HIGH');
+
+                // 4. Remote C2 / Exfiltration nodes from timeline hops
+                let remoteCount = 0;
+                inc.timeline_hops.forEach(hop => {
+                    if (hop.dest_ip && hop.dest_ip !== inc.root_entity && !hop.dest_ip.startsWith('10.10.') && remoteCount < 2) {
+                        const nRemote = addNode(hop.dest_ip, hop.dest_ip, 'c2', 'C2 Endpoint / Exfil Sink', 'CRITICAL');
+                        this.edges.push({
+                            source: nHost,
+                            target: nRemote,
+                            rel: '[:EXFIL_C2]',
+                            tech_id: hop.tech_id,
+                            stage: hop.stage,
+                            evidence: hop.evidence,
+                            isLookahead: false
+                        });
+                        remoteCount++;
+                    }
+                });
+
+                if (remoteCount === 0) {
+                    const nC2 = addNode('185.251.111.41', '185.251.111.41', 'c2', 'Cobalt Strike C2 Beacon', 'CRITICAL');
+                    this.edges.push({
+                        source: nHost,
+                        target: nC2,
+                        rel: '[:C2_BEACON]',
+                        tech_id: 'T1071.001',
+                        stage: 'Command and Control',
+                        evidence: 'Active Cobalt Strike C2 Channel',
+                        isLookahead: false
+                    });
+                }
+
+                // 5. Inbound Exploit Edge
+                this.edges.push({
+                    source: nAdv,
+                    target: nHost,
+                    rel: '[:EXPLOITS]',
+                    tech_id: 'T1190',
+                    stage: 'Initial Access',
+                    evidence: 'Remote vulnerability exploitation',
+                    isLookahead: false
+                });
+
+                // 6. Credential Access Edge
+                this.edges.push({
+                    source: nHost,
+                    target: nUser,
+                    rel: '[:CRED_THEFT]',
+                    tech_id: 'T1003',
+                    stage: 'Credential Access',
+                    evidence: 'OS Password files dumping',
+                    isLookahead: false
+                });
+
+                // 7. Hop-1 Subnet Peers (Broadcast Reachability)
+                if (inc.blast_radius && inc.blast_radius.hop1_sample_peers) {
+                    inc.blast_radius.hop1_sample_peers.slice(0, 3).forEach(peerIp => {
+                        const nPeer = addNode(peerIp, peerIp, 'peer', 'Hop-1 Subnet Neighbor (ARP Visible)', 'LOW (Exposed)');
+                        this.edges.push({
+                            source: nHost,
+                            target: nPeer,
+                            rel: '[:REACHABLE_PEER]',
+                            tech_id: 'HOP-1',
+                            stage: 'Broadcast Reachability',
+                            evidence: 'Direct L2 broadcast / ARP visibility',
+                            isLookahead: true
+                        });
+                    });
+                }
+
+                // 8. Hop-2 Mission Critical Target Assets (Domain Controller & Central DB Vault)
+                const nDC = addNode('10.10.99.1', '10.10.99.1 (DC)', 'dc', 'Primary Active Directory Domain Controller', 'CORE MISSION CRITICAL');
+                this.edges.push({
+                    source: nHost,
+                    target: nDC,
+                    rel: '[:BLAST_VECTOR]',
+                    tech_id: 'HOP-2',
+                    stage: 'Predictive Reachability',
+                    evidence: 'Netlogon ZeroLogon / Kerberos Golden Ticket Forgery',
+                    isLookahead: true
+                });
+
+                const nDB = addNode('10.10.99.10', '10.10.99.10 (DB)', 'dc', 'Customer Database Vault', 'CORE MISSION CRITICAL');
+                this.edges.push({
+                    source: nHost,
+                    target: nDB,
+                    rel: '[:BLAST_VECTOR]',
+                    tech_id: 'HOP-2',
+                    stage: 'Predictive Reachability',
+                    evidence: 'Remote SQL Injection / Credential Theft',
+                    isLookahead: true
+                });
+            }
+
+            resizeCanvas() {
+                const rect = this.canvas.parentElement.getBoundingClientRect();
+                const w = rect.width || this.canvas.parentElement.clientWidth || 800;
+                const h = rect.height || 480;
+                const dpr = window.devicePixelRatio || 1;
+                this.canvas.width = Math.floor(w * dpr);
+                this.canvas.height = Math.floor(h * dpr);
+                this.cssWidth = w;
+                this.cssHeight = h;
+                this.dpr = dpr;
+
+                if (this.panX === 0 && this.panY === 0) {
+                    this.panX = w / 2;
+                    this.panY = h / 2;
+                }
+            }
+
+            setupEvents() {
+                window.addEventListener('resize', () => this.resizeCanvas());
+
+                const getMousePos = (e) => {
+                    const rect = this.canvas.getBoundingClientRect();
+                    return {
+                        x: (e.clientX - rect.left - this.panX) / this.zoom,
+                        y: (e.clientY - rect.top - this.panY) / this.zoom
+                    };
+                };
+
+                this.canvas.addEventListener('mousedown', (e) => {
+                    const m = getMousePos(e);
+                    const clicked = this.nodes.find(n => Math.hypot(n.x - m.x, n.y - m.y) <= n.radius);
+                    if (clicked) {
+                        this.draggedNode = clicked;
+                        this.selectedNode = clicked;
+                        this.inspectNode(clicked);
+                    } else {
+                        this.isPanning = true;
+                        this.panStartX = e.clientX - this.panX;
+                        this.panStartY = e.clientY - this.panY;
+                    }
+                });
+
+                window.addEventListener('mousemove', (e) => {
+                    if (this.draggedNode) {
+                        const rect = this.canvas.getBoundingClientRect();
+                        this.draggedNode.x = (e.clientX - rect.left - this.panX) / this.zoom;
+                        this.draggedNode.y = (e.clientY - rect.top - this.panY) / this.zoom;
+                        this.draggedNode.vx = 0;
+                        this.draggedNode.vy = 0;
+                    } else if (this.isPanning) {
+                        this.panX = e.clientX - this.panStartX;
+                        this.panY = e.clientY - this.panStartY;
+                    } else {
+                        const m = getMousePos(e);
+                        this.hoveredNode = this.nodes.find(n => Math.hypot(n.x - m.x, n.y - m.y) <= n.radius) || null;
+                        this.canvas.style.cursor = this.hoveredNode ? 'pointer' : 'grab';
+                    }
+                });
+
+                window.addEventListener('mouseup', () => {
+                    this.draggedNode = null;
+                    this.isPanning = false;
+                });
+
+                this.canvas.addEventListener('wheel', (e) => {
+                    e.preventDefault();
+                    const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
+                    this.zoom = Math.max(0.3, Math.min(3.0, this.zoom * zoomFactor));
+                });
+            }
+
+            inspectNode(node) {
+                const hint = document.getElementById(`inspector-hint-${this.incId}`);
+                const content = document.getElementById(`inspector-content-${this.incId}`);
+                if (hint) hint.style.display = 'none';
+                if (!content) return;
+
+                const color = this.getNodeColor(node.type);
+                content.style.display = 'block';
+                content.innerHTML = `
+                    <div class="inspector-card" style="border-left: 3px solid ${color};">
+                        <div style="font-size: 0.7rem; color: #94a3b8; text-transform: uppercase;">Selected Graph Node</div>
+                        <div style="font-weight: 800; color: #fff; font-size: 1rem; margin-top: 2px;">${node.label}</div>
+                        <div style="font-size: 0.75rem; color: ${color}; font-weight: 700; margin-top: 3px;">${node.role}</div>
+                    </div>
+
+                    <div class="inspector-card">
+                        <div style="color: #94a3b8; font-size: 0.7rem;">Criticality Assessment</div>
+                        <div style="font-weight: 700; color: #fff; margin-top: 2px;">${node.criticality}</div>
+                        <div style="font-size: 0.75rem; color: #cbd5e1; margin-top: 4px; line-height: 1.4;">
+                            ${node.type === 'adversary' ? 'Originating external threat actor attacking through WAN interface.' :
+                              node.type === 'host' ? 'Directly breached DMZ asset executing attacker commands.' :
+                              node.type === 'user' ? 'Compromised credentials leveraged for privilege escalation.' :
+                              node.type === 'c2' ? 'External C2 beacon/exfiltration receiver server.' :
+                              node.type === 'dc' ? 'Critical tier-0 Active Directory / Database vault target in 2-hop radius.' :
+                              'Neighboring host on same L2 broadcast domain vulnerable to lateral sweep.'}
+                        </div>
+                    </div>
+
+                    <div class="inspector-card">
+                        <div style="color: #94a3b8; font-size: 0.7rem;">Active Incident Association</div>
+                        <div style="font-weight: 700; color: #38bdf8;">Incident #${this.data.incident_id}</div>
+                        <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 2px;">Risk Score: <strong style="color: #ef4444;">${this.data.risk_score} / 100</strong></div>
+                    </div>
+
+                    <div class="inspector-card">
+                        <div style="color: #94a3b8; font-size: 0.7rem;">Actionable Playbook Step</div>
+                        <div style="font-size: 0.75rem; color: #38bdf8; font-weight: 600; margin-top: 3px;">
+                            ${node.type === 'adversary' ? 'Null-route IP on perimeter FortiGate WAN policy.' :
+                              node.type === 'host' ? 'Isolate switch port / move to quarantine VLAN.' :
+                              node.type === 'user' ? 'Revoke Kerberos TGT & force AD password reset.' :
+                              node.type === 'dc' ? 'Apply emergency ZeroLogon hardening patch & monitor Kerberos logs.' :
+                              'Block egress beaconing to IP.'}
+                        </div>
+                    </div>
+                `;
+            }
+
+            getNodeColor(type) {
+                switch(type) {
+                    case 'adversary': return '#ef4444';
+                    case 'host': return '#06b6d4';
+                    case 'user': return '#f59e0b';
+                    case 'c2': return '#a855f7';
+                    case 'dc': return '#f43f5e';
+                    case 'peer': return '#64748b';
+                    default: return '#94a3b8';
+                }
+            }
+
+            startSimulation() {
+                const step = () => {
+                    if (this.isPhysicsRunning) {
+                        this.updatePhysics();
+                    }
+                    this.render();
+                    requestAnimationFrame(step);
+                };
+                requestAnimationFrame(step);
+            }
+
+            updatePhysics() {
+                const kRepel = 3200;
+                const kSpring = 0.04;
+                const restLength = 125;
+
+                // Repulsion between all nodes
+                for (let i = 0; i < this.nodes.length; i++) {
+                    for (let j = i + 1; j < this.nodes.length; j++) {
+                        const n1 = this.nodes[i];
+                        const n2 = this.nodes[j];
+                        const dx = n2.x - n1.x;
+                        const dy = n2.y - n1.y;
+                        const dist = Math.hypot(dx, dy) || 1;
+                        const force = kRepel / (dist * dist);
+                        const fx = (dx / dist) * force;
+                        const fy = (dy / dist) * force;
+
+                        if (n1 !== this.draggedNode) { n1.vx -= fx; n1.vy -= fy; }
+                        if (n2 !== this.draggedNode) { n2.vx += fx; n2.vy += fy; }
+                    }
+                }
+
+                // Spring forces along edges
+                this.edges.forEach(e => {
+                    const n1 = e.source;
+                    const n2 = e.target;
+                    const dx = n2.x - n1.x;
+                    const dy = n2.y - n1.y;
+                    const dist = Math.hypot(dx, dy) || 1;
+                    const force = (dist - restLength) * kSpring;
+                    const fx = (dx / dist) * force;
+                    const fy = (dy / dist) * force;
+
+                    if (n1 !== this.draggedNode) { n1.vx += fx; n1.vy += fy; }
+                    if (n2 !== this.draggedNode) { n2.vx -= fx; n2.vy += fy; }
+                });
+
+                // Center gravity and velocity damping
+                this.nodes.forEach(n => {
+                    if (n !== this.draggedNode) {
+                        n.vx -= n.x * 0.006;
+                        n.vy -= n.y * 0.006;
+                        n.vx *= 0.85;
+                        n.vy *= 0.85;
+                        n.x += n.vx;
+                        n.y += n.vy;
+                    }
+                });
+            }
+
+            render() {
+                const ctx = this.ctx;
+                const dpr = this.dpr || 1;
+                const w = this.cssWidth || 800;
+                const h = this.cssHeight || 480;
+
+                ctx.save();
+                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+                ctx.clearRect(0, 0, w, h);
+
+                // Neo4j Bloom style background grid dots
+                ctx.fillStyle = '#1e293b';
+                const gridSize = 32 * this.zoom;
+                const offX = (this.panX % gridSize);
+                const offY = (this.panY % gridSize);
+                for (let x = offX; x < w; x += gridSize) {
+                    for (let y = offY; y < h; y += gridSize) {
+                        ctx.fillRect(x, y, 1.2, 1.2);
+                    }
+                }
+
+                ctx.translate(this.panX, this.panY);
+                ctx.scale(this.zoom, this.zoom);
+
+                // Draw Edges
+                this.edges.forEach(e => {
+                    const n1 = e.source;
+                    const n2 = e.target;
+
+                    const dx = n2.x - n1.x;
+                    const dy = n2.y - n1.y;
+                    const dist = Math.hypot(dx, dy) || 1;
+                    const ux = dx / dist;
+                    const uy = dy / dist;
+
+                    const startX = n1.x + ux * n1.radius;
+                    const startY = n1.y + uy * n1.radius;
+                    const endX = n2.x - ux * (n2.radius + 6);
+                    const endY = n2.y - uy * (n2.radius + 6);
+
+                    ctx.beginPath();
+                    ctx.moveTo(startX, startY);
+                    ctx.lineTo(endX, endY);
+
+                    if (e.isLookahead) {
+                        ctx.strokeStyle = '#ef4444';
+                        ctx.lineWidth = 1.8;
+                        ctx.setLineDash([5, 5]);
+                    } else {
+                        ctx.strokeStyle = '#38bdf8';
+                        ctx.lineWidth = 2.0;
+                        ctx.setLineDash([]);
+                    }
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+
+                    // Arrowhead
+                    const angle = Math.atan2(dy, dx);
+                    ctx.beginPath();
+                    ctx.moveTo(endX, endY);
+                    ctx.lineTo(
+                        endX - 8 * Math.cos(angle - Math.PI / 6),
+                        endY - 8 * Math.sin(angle - Math.PI / 6)
+                    );
+                    ctx.lineTo(
+                        endX - 8 * Math.cos(angle + Math.PI / 6),
+                        endY - 8 * Math.sin(angle + Math.PI / 6)
+                    );
+                    ctx.closePath();
+                    ctx.fillStyle = e.isLookahead ? '#ef4444' : '#38bdf8';
+                    ctx.fill();
+
+                    // Neo4j Relationship Pill Badge
+                    const mx = (startX + endX) / 2;
+                    const my = (startY + endY) / 2;
+                    ctx.font = 'bold 8.5px monospace';
+                    const text = e.rel || e.tech_id;
+                    const textW = ctx.measureText(text).width;
+
+                    ctx.fillStyle = '#080d16';
+                    ctx.fillRect(mx - textW / 2 - 4, my - 6, textW + 8, 12);
+                    ctx.strokeStyle = e.isLookahead ? '#ef4444' : '#334155';
+                    ctx.lineWidth = 0.8;
+                    ctx.strokeRect(mx - textW / 2 - 4, my - 6, textW + 8, 12);
+
+                    ctx.fillStyle = e.isLookahead ? '#fca5a5' : '#7dd3fc';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(text, mx, my);
+                });
+
+                // Draw Nodes
+                this.nodes.forEach(n => {
+                    const color = this.getNodeColor(n.type);
+                    const isSelected = n === this.selectedNode;
+                    const isHovered = n === this.hoveredNode;
+
+                    // Outer Halo
+                    ctx.beginPath();
+                    ctx.arc(n.x, n.y, n.radius + (isSelected ? 7 : isHovered ? 5 : 3), 0, Math.PI * 2);
+                    ctx.fillStyle = color + (isSelected ? '55' : isHovered ? '44' : '18');
+                    ctx.fill();
+
+                    // Node Body
+                    ctx.beginPath();
+                    ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2);
+                    ctx.fillStyle = '#0b1120';
+                    ctx.strokeStyle = color;
+                    ctx.lineWidth = isSelected ? 3.5 : 2.2;
+                    ctx.fill();
+                    ctx.stroke();
+
+                    // Inside Category Icon
+                    ctx.fillStyle = color;
+                    ctx.font = 'bold 8.5px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    const iconText = n.type === 'adversary' ? 'WAN' :
+                                     n.type === 'host' ? 'HOST' :
+                                     n.type === 'user' ? 'USER' :
+                                     n.type === 'dc' ? 'DC' :
+                                     n.type === 'c2' ? 'C2' : 'PEER';
+                    ctx.fillText(iconText, n.x, n.y);
+
+                    // Label below node
+                    ctx.fillStyle = '#f8fafc';
+                    ctx.font = '9.5px monospace';
+                    ctx.fillText(n.label, n.x, n.y + n.radius + 11);
+                });
+
+                ctx.restore();
+            }
+
+            resetView() {
+                this.panX = this.cssWidth / 2;
+                this.panY = this.cssHeight / 2;
+                this.zoom = 1.0;
+            }
+
+            zoom(factor) {
+                this.zoom = Math.max(0.3, Math.min(3.0, this.zoom * factor));
+            }
+
+            togglePhysics() {
+                this.isPhysicsRunning = !this.isPhysicsRunning;
+            }
+        }
+
+        // Initialize all incident graphs
+        window.onload = () => {
+            INCIDENTS_DATA.forEach(inc => {
+                const canvasId = `graph-canvas-${inc.incident_id}`;
+                if (document.getElementById(canvasId)) {
+                    GRAPH_INSTANCES[inc.incident_id] = new InteractiveForceGraph(canvasId, inc);
+                }
+            });
+        };
+
+        function resetGraphView(incId) {
+            if (GRAPH_INSTANCES[incId]) GRAPH_INSTANCES[incId].resetView();
+        }
+
+        function zoomGraph(incId, factor) {
+            if (GRAPH_INSTANCES[incId]) GRAPH_INSTANCES[incId].zoom(factor);
+        }
+
+        function togglePhysics(incId) {
+            if (GRAPH_INSTANCES[incId]) GRAPH_INSTANCES[incId].togglePhysics();
+        }
+    </script>
 </body>
 </html>
