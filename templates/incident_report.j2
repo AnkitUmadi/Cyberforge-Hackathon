@@ -770,9 +770,15 @@
                     </div>
 
                     <div class="inspector-card">
-                        <div style="color: #94a3b8; font-size: 0.7rem;">Active Incident Association</div>
-                        <div style="font-weight: 700; color: #38bdf8;">Incident #${this.data.incident_id}</div>
-                        <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 2px;">Risk Score: <strong style="color: #ef4444;">${this.data.risk_score} / 100</strong></div>
+                        <div style="color: #94a3b8; font-size: 0.7rem;">Parent Incident Context</div>
+                        <div style="font-weight: 700; color: #38bdf8;">Incident #${this.data.incident_id} (Campaign Risk: <span style="color: #ef4444;">${this.data.risk_score} / 100</span>)</div>
+                        <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 3px;">
+                            ${node.type === 'adversary' ? 'Threat Ingress Vector &bull; Initial Exploit' :
+                              node.type === 'host' ? 'Weaponized DMZ Server &bull; Lateral Pivot' :
+                              node.type === 'user' ? 'Compromised Identity &bull; Credential Theft' :
+                              node.type === 'dc' ? 'Crown Jewel Blast Target &bull; Active Directory' :
+                              node.type === 'c2' ? 'Exfiltration Sink &bull; C2 Beaconing' : 'Subnet L2 Neighbor'}
+                        </div>
                     </div>
 
                     <div class="inspector-card">
