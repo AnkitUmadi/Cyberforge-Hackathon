@@ -1,0 +1,22 @@
+id: MAL-001
+technique_id: T1204.002
+technique_name: "User Execution: Malicious File / Trojan"
+stage: Execution
+severity: high
+params: {}
+phrase: "Malicious trojan or dropper payload ({extra}) detected on {dest_host} from {src_ip}"
+sql: |
+  SELECT 
+    min(timestamp) as ts_start,
+    max(timestamp) as ts_end,
+    min(usr) as usr,
+    min(src_host) as src_host,
+    min(dest_host) as dest_host,
+    src_ip,
+    dest_ip,
+    count(*) as event_count,
+    process_name as extra
+  FROM events
+  WHERE event_type = 'virus_alert' 
+    AND (process_name LIKE '%Agent%' OR process_name LIKE '%Nemucod%' OR process_name LIKE '%.exe%')
+  GROUP BY src_ip, dest_ip, process_name

@@ -1,0 +1,23 @@
+id: BF-001
+technique_id: T1110.001
+technique_name: "Brute Force: Password Guessing"
+stage: Credential Access
+severity: high
+params:
+  threshold: 20
+phrase: "{usr} targeted by password guessing ({event_count} failed logins) from {src_ip}"
+sql: |
+  SELECT 
+    min(timestamp) as ts_start,
+    max(timestamp) as ts_end,
+    usr,
+    min(src_host) as src_host,
+    min(dest_host) as dest_host,
+    src_ip,
+    min(dest_ip) as dest_ip,
+    count(*) as event_count,
+    NULL as extra
+  FROM events
+  WHERE event_type = 'login' AND status = 'FAILURE'
+  GROUP BY usr, src_ip
+  HAVING count(*) >= {{threshold}}

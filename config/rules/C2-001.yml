@@ -1,0 +1,22 @@
+id: C2-001
+technique_id: T1071.001
+technique_name: "Application Layer Protocol: C2 Traffic"
+stage: Command and Control
+severity: high
+params: {}
+phrase: "Botnet command and control communication ({extra}) observed between {src_ip} and {dest_ip}"
+sql: |
+  SELECT 
+    min(timestamp) as ts_start,
+    max(timestamp) as ts_end,
+    min(usr) as usr,
+    min(src_host) as src_host,
+    min(dest_host) as dest_host,
+    src_ip,
+    dest_ip,
+    count(*) as event_count,
+    process_name as extra
+  FROM events
+  WHERE event_type = 'ips_alert' 
+    AND process_name LIKE '%Mirai.Botnet%'
+  GROUP BY src_ip, dest_ip, process_name

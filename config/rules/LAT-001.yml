@@ -1,0 +1,24 @@
+id: LAT-001
+technique_id: T1021
+technique_name: "Remote Services: SMB / RDP / SSH"
+stage: Lateral Movement
+severity: medium
+params: {}
+phrase: "Inbound remote service access ({extra}) to internal server {dest_ip} from {src_ip}"
+sql: |
+  SELECT 
+    min(timestamp) as ts_start,
+    max(timestamp) as ts_end,
+    min(usr) as usr,
+    min(src_host) as src_host,
+    min(dest_host) as dest_host,
+    src_ip,
+    dest_ip,
+    count(*) as event_count,
+    process_name as extra
+  FROM events
+  WHERE event_type = 'network_connection' 
+    AND NOT is_private_ip(src_ip) 
+    AND is_private_ip(dest_ip)
+    AND process_name IN ('SMB', 'RDP', 'SSH')
+  GROUP BY src_ip, dest_ip, process_name

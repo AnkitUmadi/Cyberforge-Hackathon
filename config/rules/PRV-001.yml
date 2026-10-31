@@ -1,0 +1,22 @@
+id: PRV-001
+technique_id: T1068
+technique_name: "Exploitation for Privilege Escalation: ZeroLogon"
+stage: Privilege Escalation
+severity: critical
+params: {}
+phrase: "Privilege escalation exploit ({extra}) targeted domain controller {dest_ip} from {src_ip}"
+sql: |
+  SELECT 
+    min(timestamp) as ts_start,
+    max(timestamp) as ts_end,
+    min(usr) as usr,
+    min(src_host) as src_host,
+    min(dest_host) as dest_host,
+    src_ip,
+    dest_ip,
+    count(*) as event_count,
+    process_name as extra
+  FROM events
+  WHERE event_type = 'ips_alert' 
+    AND process_name LIKE '%ZeroLogon%'
+  GROUP BY src_ip, dest_ip, process_name

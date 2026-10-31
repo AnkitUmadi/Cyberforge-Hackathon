@@ -1,0 +1,22 @@
+id: PHISH-001
+technique_id: T1566.002
+technique_name: "Phishing: Spearphishing Link"
+stage: Initial Access
+severity: medium
+params: {}
+phrase: "Connection to malicious phishing domain ({dest_host}) blocked for client {src_ip}"
+sql: |
+  SELECT 
+    min(timestamp) as ts_start,
+    max(timestamp) as ts_end,
+    min(usr) as usr,
+    min(src_host) as src_host,
+    dest_host,
+    src_ip,
+    min(dest_ip) as dest_ip,
+    count(*) as event_count,
+    min(json_extract_string(details, '$.catdesc')) as extra
+  FROM events
+  WHERE event_type = 'webfilter' 
+    AND json_extract_string(details, '$.catdesc') LIKE '%Phishing%'
+  GROUP BY src_ip, dest_host

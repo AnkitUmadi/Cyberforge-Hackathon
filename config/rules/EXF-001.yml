@@ -1,0 +1,25 @@
+id: EXF-001
+technique_id: T1041
+technique_name: "Exfiltration Over C2 Channel"
+stage: Exfiltration
+severity: high
+params:
+  min_bytes: 5000000
+phrase: "Data exfiltration detected ({event_count} sessions, >5MB transferred via {extra}) from internal {src_ip} to external {dest_ip}"
+sql: |
+  SELECT 
+    min(timestamp) as ts_start,
+    max(timestamp) as ts_end,
+    min(usr) as usr,
+    min(src_host) as src_host,
+    min(dest_host) as dest_host,
+    src_ip,
+    dest_ip,
+    count(*) as event_count,
+    min(process_name) as extra
+  FROM events
+  WHERE event_type = 'network_connection' 
+    AND is_private_ip(src_ip) 
+    AND NOT is_private_ip(dest_ip)
+    AND try_cast(json_extract_string(details, '$.sentbyte') AS BIGINT) >= {{min_bytes}}
+  GROUP BY src_ip, dest_ip
