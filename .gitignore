@@ -21,3 +21,4 @@ out/
 .idea/
 .DS_Store
 Thumbs.db
+.chrome_test_profile/
