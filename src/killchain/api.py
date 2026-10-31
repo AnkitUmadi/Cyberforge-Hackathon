@@ -288,7 +288,10 @@ def get_incident_detail(incident_id: int):
         }
         
         inc_data["plain_english_report"] = generate_plain_english_narrative(inc_data)
-        inc_data["temporal_analysis"] = compute_temporal_dynamics(timeline_hops, row[10], blast)
+        inc_data["temporal_analysis"] = compute_temporal_dynamics(
+            timeline_hops, row[10], blast,
+            root_entity=row[4], adversary_ip=row[5], usr=row[6]
+        )
         return inc_data
     finally:
         conn.close()
@@ -456,7 +459,7 @@ def get_temporal_analysis(incident_id: int):
     conn = get_connection(DB_PATH)
     try:
         row = conn.execute("""
-            SELECT duration_minutes, lookahead_2hop
+            SELECT duration_minutes, lookahead_2hop, root_entity, adversary_ip, usr
             FROM incidents
             WHERE incident_id = ?;
         """, [incident_id]).fetchone()
@@ -466,6 +469,9 @@ def get_temporal_analysis(incident_id: int):
             
         dur = row[0]
         blast = json.loads(row[1]) if row[1] else {}
+        root_ent = row[2]
+        adv_ip = row[3]
+        user_name = row[4]
         
         hop_rows = conn.execute("""
             SELECT 
@@ -490,7 +496,10 @@ def get_temporal_analysis(incident_id: int):
                 "evidence": h[7] or "Direct signature hit"
             })
             
-        temporal_data = compute_temporal_dynamics(timeline_hops, dur, blast)
+        temporal_data = compute_temporal_dynamics(
+            timeline_hops, dur, blast,
+            root_entity=root_ent, adversary_ip=adv_ip, usr=user_name
+        )
         return {
             "incident_id": incident_id,
             "temporal_analysis": temporal_data
