@@ -33,6 +33,8 @@ app.add_middleware(
 
 DB_PATH = os.environ.get("KILLCHAIN_DB_PATH", "out/killchain.duckdb")
 HTML_REPORT_PATH = os.environ.get("KILLCHAIN_REPORT_PATH", "out/incident_report.html")
+CAUSAL_HTML_PATH = os.environ.get("KILLCHAIN_CAUSAL_PATH", "out/causal_replay.html")
+CAUSAL_BUNDLE_PATH = os.environ.get("KILLCHAIN_BUNDLE_PATH", "out/causal_replay_bundle.js")
 
 def ensure_db():
     if not os.path.exists(DB_PATH):
@@ -53,6 +55,29 @@ def get_dashboard_ui():
     
     with open(HTML_REPORT_PATH, "r", encoding="utf-8") as f:
         return HTMLResponse(content=f.read())
+
+@app.get("/causal", response_class=HTMLResponse, tags=["Dashboard UI"])
+@app.get("/replay", response_class=HTMLResponse, tags=["Dashboard UI"])
+def get_causal_replay_ui():
+    """
+    Serves the Causal Territorial Infection Replay Engine with dynamic
+    outward cluster spawning, bud & tether emergence, and LOD supernodes.
+    """
+    if os.path.exists(CAUSAL_HTML_PATH):
+        with open(CAUSAL_HTML_PATH, "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+    raise HTTPException(status_code=404, detail="Causal replay UI not found")
+
+@app.get("/causal_replay_bundle.js", tags=["Dashboard UI"])
+def get_causal_replay_bundle():
+    """
+    Serves the compiled browser bundle for Causal Territorial Layout Engine.
+    """
+    if os.path.exists(CAUSAL_BUNDLE_PATH):
+        from fastapi.responses import Response
+        with open(CAUSAL_BUNDLE_PATH, "r", encoding="utf-8") as f:
+            return Response(content=f.read(), media_type="application/javascript")
+    raise HTTPException(status_code=404, detail="Causal bundle not found")
 
 @app.get("/api/health", tags=["System Health"])
 def health_check():

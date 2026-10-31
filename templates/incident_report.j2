@@ -438,9 +438,14 @@
                 Interactive Neo4j-Style Attack Graph, Causal Timelines & Predictive Blast Radius
             </div>
         </div>
-        <div style="text-align: right;">
-            <div style="font-size: 0.85rem; font-weight: 700; color: #fff;">Telemetry: Core (15 GB Profile)</div>
-            <div style="font-size: 0.8rem; color: var(--text-muted);">Generated: {{ generated_at }}</div>
+        <div style="display: flex; align-items: center; gap: 18px;">
+            <a href="/causal" target="_blank" style="text-decoration: none; background: linear-gradient(135deg, #2563eb, #7c3aed); color: #fff; padding: 8px 16px; border-radius: 6px; font-weight: 700; font-size: 0.85rem; box-shadow: 0 0 16px rgba(37,99,235,0.4); display: inline-flex; align-items: center; gap: 8px; border: 1px solid rgba(255,255,255,0.2); transition: all 0.15s ease;">
+                <span>⚡</span> Launch Causal Replay Engine &rarr;
+            </a>
+            <div style="text-align: right;">
+                <div style="font-size: 0.85rem; font-weight: 700; color: #fff;">Telemetry: Core (15 GB Profile)</div>
+                <div style="font-size: 0.8rem; color: var(--text-muted);">Generated: {{ generated_at }}</div>
+            </div>
         </div>
     </div>
 
@@ -635,6 +640,7 @@
                 <canvas id="graph-canvas-{{ inc.incident_id }}"></canvas>
 
                 <div class="graph-controls">
+                    <button class="btn-graph" id="layout-toggle-{{ inc.incident_id }}" onclick="toggleLayoutMode('{{ inc.incident_id }}')">🌀 Mode: Causal Territorial</button>
                     <button class="btn-graph" onclick="zoomGraph('{{ inc.incident_id }}', 1.25)">➕ Zoom In</button>
                     <button class="btn-graph" onclick="zoomGraph('{{ inc.incident_id }}', 0.8)">➖ Zoom Out</button>
                     <button class="btn-graph" onclick="resetGraphView('{{ inc.incident_id }}')">⛶ Fit Graph</button>
@@ -944,6 +950,7 @@
                 this.isPanning = false;
                 this.hoverEntity = null;
                 this.selectedEntity = null;
+                this.layoutMode = 'causal'; // 'causal' or 'column'
 
                 this.initCanvasSize();
                 this.initLayout();
@@ -966,9 +973,108 @@
             }
 
             initLayout() {
-                // Section 2: Fixed Stage-Ordered Layout (Left to Right)
-                const stageCols = [[], [], [], [], []];
+                if (this.layoutMode === 'causal') {
+                    this.initCausalTerritorialLayout();
+                } else {
+                    this.initColumnStageLayout();
+                }
+            }
 
+            initCausalTerritorialLayout() {
+                const GOLDEN_ANGLE = 2.3999632;
+                const defaultPitch = 34;
+
+                const p0Id = String(this.data.adversary_ip || (this.nodes.length > 0 ? this.nodes[0].id : 'Attacker'));
+                const p0Pos = { x: 120, y: this.height / 2 - 40 };
+
+                this.nodes.forEach(n => {
+                    n.t = (this.firstCompromise[n.id] !== undefined) ? this.firstCompromise[n.id] : 9999;
+                    n.radius = 20;
+                    n.criticality = n.criticality || 0.5;
+
+                    let parentId = null;
+                    let earliestT = Infinity;
+                    this.events.forEach(e => {
+                        if (e.dst === n.id && e.t_min < earliestT) {
+                            earliestT = e.t_min;
+                            parentId = e.src;
+                        }
+                    });
+                    n.parent = parentId || (n.id === p0Id ? null : p0Id);
+                    n.cluster = n.subnet || n.type || 'Internal';
+                });
+
+                const clusterMap = new Map();
+                this.nodes.forEach(n => {
+                    if (!clusterMap.has(n.cluster)) clusterMap.set(n.cluster, []);
+                    clusterMap.get(n.cluster).push(n);
+                });
+
+                const clusterSeeds = new Map();
+                const padX = 140;
+                const availW = this.width - 280;
+                let cIdx = 0;
+                const totalClusters = clusterMap.size;
+
+                clusterMap.forEach((members, cName) => {
+                    const R = Math.max(75, 1.15 * defaultPitch * Math.sqrt(Math.max(4, members.length)));
+                    let seedX = p0Pos.x + 120;
+                    let seedY = p0Pos.y;
+
+                    if (cName === 'WAN' || members.some(m => m.id === p0Id)) {
+                        seedX = p0Pos.x;
+                        seedY = p0Pos.y;
+                    } else {
+                        const frac = totalClusters > 1 ? (cIdx / (totalClusters - 1)) : 0.5;
+                        seedX = padX + frac * availW + 60;
+                        const altY = ((cIdx % 2 === 0) ? -1 : 1) * (45 + (cIdx * 18));
+                        seedY = clamp(p0Pos.y + altY, 90, this.height - 180);
+                    }
+
+                    clusterSeeds.set(cName, {
+                        x: seedX,
+                        y: seedY,
+                        radius: R,
+                        phase: (cIdx * 1.618) % (Math.PI * 2)
+                    });
+                    cIdx++;
+                });
+
+                clusterMap.forEach((members, cName) => {
+                    const seed = clusterSeeds.get(cName);
+                    members.sort((a, b) => a.t - b.t);
+
+                    members.forEach((node, k) => {
+                        const r = defaultPitch * Math.sqrt(k + 0.5);
+                        const theta = k * GOLDEN_ANGLE + seed.phase;
+                        const slotX = seed.x + r * Math.cos(theta);
+                        const slotY = seed.y + r * Math.sin(theta);
+
+                        node.targetX = slotX;
+                        node.targetY = slotY;
+                        node.x = slotX;
+                        node.y = slotY;
+                        node.budX = seed.x;
+                        node.budY = seed.y;
+                    });
+                });
+
+                this.nodeMap = {};
+                this.nodes.forEach(n => { this.nodeMap[n.id] = n; });
+
+                this.nodes.forEach(n => {
+                    if (n.parent && this.nodeMap[n.parent]) {
+                        n.budX = this.nodeMap[n.parent].targetX;
+                        n.budY = this.nodeMap[n.parent].targetY;
+                    }
+                });
+
+                this.clusterSeeds = clusterSeeds;
+                this.patientZeroPos = p0Pos;
+            }
+
+            initColumnStageLayout() {
+                const stageCols = [[], [], [], [], []];
                 const getNodeCol = (n) => {
                     const id = String(n.id).toLowerCase();
                     const t = String(n.type).toUpperCase();
@@ -976,7 +1082,7 @@
                     if (id === String(this.data.root_entity).toLowerCase() || (t === 'HOST' && stageCols[1].length === 0)) return 1;
                     if (t === 'USER' || n.privLevel <= 2) return 2;
                     if (t === 'C2' || t === 'PEER' || n.criticality < 0.8) return 3;
-                    return 4; // Crown jewels (DB, DC)
+                    return 4;
                 };
 
                 this.nodes.forEach(n => {
@@ -987,7 +1093,7 @@
                 const padX = 75;
                 const availW = this.width - 2 * padX;
                 const topY = 60;
-                const botY = this.height - 105; // Leave 88px at bottom for timeline strip
+                const botY = this.height - 105;
                 const availH = botY - topY;
 
                 stageCols.forEach((colNodes, colIdx) => {
@@ -995,8 +1101,12 @@
                     const count = colNodes.length;
                     colNodes.forEach((node, rowIdx) => {
                         const colY = topY + ((rowIdx + 1) / (count + 1)) * availH;
+                        node.targetX = colX;
+                        node.targetY = colY;
                         node.x = colX;
                         node.y = colY;
+                        node.budX = colX;
+                        node.budY = colY;
                         node.radius = 20;
                         node.t = (this.firstCompromise[node.id] !== undefined) ? this.firstCompromise[node.id] : 9999;
                     });
@@ -1367,6 +1477,28 @@
 
                 this.currentRisk = sumW > 0 ? clamp((100 * sumWP) / sumW, 10, 99) : 45;
 
+                // Dynamic closed-form bud and tether emergence (no pre-drawn static nodes)
+                if (this.layoutMode === 'causal') {
+                    this.nodes.forEach(n => {
+                        const age = tNow - n.t;
+                        if (age >= 0) {
+                            const s = clamp(age / 8, 0, 1);
+                            const ease = 1 - Math.pow(1 - s, 3);
+                            n.x = n.budX + (n.targetX - n.budX) * ease;
+                            n.y = n.budY + (n.targetY - n.budY) * ease;
+                            n.scale = ease;
+                            n.isSettling = (s < 1.0);
+                            n.progress = s;
+                        } else {
+                            n.x = n.budX;
+                            n.y = n.budY;
+                            n.scale = 0;
+                            n.isSettling = false;
+                            n.progress = 0;
+                        }
+                    });
+                }
+
                 // Save transform for graph zoom / pan
                 ctx.save();
                 ctx.translate(this.panX, this.panY);
@@ -1400,34 +1532,96 @@
                 ctx.fillStyle = '#0a0f1d';
                 ctx.fillRect(0, 0, W, H);
 
-                const padX = 75;
-                const availW = W - 2 * padX;
-                const stages = [
-                    { title: "WAN / ADVERSARY", sub: "Stage 0 (Origin)" },
-                    { title: "DMZ ENTRY", sub: "Initial Access & Exec" },
-                    { title: "CREDENTIAL / USER", sub: "Token & Kerberos" },
-                    { title: "INTERNAL LATERAL", sub: "Peer & C2 Pivot" },
-                    { title: "CROWN JEWELS", sub: "Active Directory / DC" }
-                ];
+                if (this.layoutMode === 'causal') {
+                    // 1. Draw subtle cluster territory boundaries & halos
+                    if (this.clusterSeeds) {
+                        this.clusterSeeds.forEach((seed, cName) => {
+                            ctx.save();
+                            ctx.beginPath();
+                            ctx.arc(seed.x, seed.y, seed.radius, 0, Math.PI * 2);
+                            ctx.strokeStyle = 'rgba(56, 189, 248, 0.12)';
+                            ctx.lineWidth = 1;
+                            ctx.setLineDash([4, 6]);
+                            ctx.stroke();
 
-                ctx.font = '10px "Inter", -apple-system, sans-serif';
-                ctx.textAlign = 'center';
+                            ctx.fillStyle = '#64748b';
+                            ctx.font = 'bold 9px monospace';
+                            ctx.textAlign = 'center';
+                            ctx.fillText(`TERRITORY: ${cName.toUpperCase()}`, seed.x, seed.y - seed.radius - 6);
+                            ctx.restore();
+                        });
+                    }
 
-                stages.forEach((st, i) => {
-                    const x = padX + (i / 4) * availW;
-                    ctx.strokeStyle = 'rgba(30, 41, 59, 0.45)';
-                    ctx.setLineDash([3, 5]);
-                    ctx.beginPath();
-                    ctx.moveTo(x, 42);
-                    ctx.lineTo(x, H - 98);
-                    ctx.stroke();
-                    ctx.setLineDash([]);
+                    // 2. Draw expanding causal wavefront shockwave arc from Patient Zero
+                    if (this.patientZeroPos) {
+                        let maxDist = 0;
+                        this.nodes.forEach(n => {
+                            if (n.t <= this.tNow) {
+                                const d = Math.hypot(n.x - this.patientZeroPos.x, n.y - this.patientZeroPos.y);
+                                if (d > maxDist) maxDist = d;
+                            }
+                        });
+                        if (maxDist > 0) {
+                            ctx.save();
+                            ctx.beginPath();
+                            ctx.arc(this.patientZeroPos.x, this.patientZeroPos.y, maxDist, 0, Math.PI * 2);
+                            ctx.strokeStyle = 'rgba(239, 68, 68, 0.22)';
+                            ctx.lineWidth = 2;
+                            ctx.setLineDash([6, 8]);
+                            ctx.stroke();
+                            ctx.restore();
+                        }
+                    }
 
-                    ctx.fillStyle = '#64748b';
-                    ctx.fillText(st.title, x, 28);
-                    ctx.fillStyle = '#475569';
-                    ctx.fillText(st.sub, x, 40);
-                });
+                    // 3. Draw active emerging tethers connecting newborn nodes to their parent buds
+                    this.nodes.forEach(n => {
+                        if (n.t <= this.tNow && n.isSettling) {
+                            const opacity = Math.max(0, 1 - n.progress);
+                            const dx = n.x - n.budX;
+                            const dy = n.y - n.budY;
+                            const cx = (n.budX + n.x) / 2 - dy * 0.14;
+                            const cy = (n.budY + n.y) / 2 + dx * 0.14;
+
+                            ctx.save();
+                            ctx.beginPath();
+                            ctx.moveTo(n.budX, n.budY);
+                            ctx.quadraticCurveTo(cx, cy, n.x, n.y);
+                            ctx.strokeStyle = `rgba(245, 158, 11, ${opacity * 0.8})`;
+                            ctx.lineWidth = Math.max(0.8, opacity * 2.5);
+                            ctx.stroke();
+                            ctx.restore();
+                        }
+                    });
+                } else {
+                    const padX = 75;
+                    const availW = W - 2 * padX;
+                    const stages = [
+                        { title: "WAN / ADVERSARY", sub: "Stage 0 (Origin)" },
+                        { title: "DMZ ENTRY", sub: "Initial Access & Exec" },
+                        { title: "CREDENTIAL / USER", sub: "Token & Kerberos" },
+                        { title: "INTERNAL LATERAL", sub: "Peer & C2 Pivot" },
+                        { title: "CROWN JEWELS", sub: "Active Directory / DC" }
+                    ];
+
+                    ctx.font = '10px "Inter", -apple-system, sans-serif';
+                    ctx.textAlign = 'center';
+
+                    stages.forEach((st, i) => {
+                        const x = padX + (i / 4) * availW;
+                        ctx.strokeStyle = 'rgba(30, 41, 59, 0.45)';
+                        ctx.setLineDash([3, 5]);
+                        ctx.beginPath();
+                        ctx.moveTo(x, 42);
+                        ctx.lineTo(x, H - 98);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+
+                        ctx.fillStyle = '#64748b';
+                        ctx.fillText(st.title, x, 28);
+                        ctx.fillStyle = '#475569';
+                        ctx.fillText(st.sub, x, 40);
+                    });
+                }
             }
 
             renderGhostEdges(ctx, tNow, pMap) {
