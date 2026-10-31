@@ -19,8 +19,13 @@ sql: |
   FROM events
   WHERE event_type = 'ips_alert' 
     AND (
+      -- Root stem matching for any adversary C2 tool
       process_name LIKE '%Mirai%' 
-      OR process_name LIKE '%Cobalt.Strike%' 
+      OR process_name LIKE '%Cobalt%' 
       OR process_name LIKE '%Beacon%'
+      OR process_name LIKE '%Botnet%'
+      OR process_name LIKE '%Backdoor%'
+      OR process_name LIKE '%C2%'
+      OR process_name LIKE '%Trojan%'
     )
   GROUP BY src_ip, dest_ip, process_name

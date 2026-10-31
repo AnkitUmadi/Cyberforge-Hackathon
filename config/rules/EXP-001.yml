@@ -19,14 +19,19 @@ sql: |
   FROM events
   WHERE event_type = 'ips_alert' 
     AND (
-      process_name LIKE '%Log4j%' 
-      OR process_name LIKE '%SSLVPN%' 
-      OR process_name LIKE '%Buffer.Overflow%' 
-      OR process_name LIKE '%Directory.Traversal%'
-      OR process_name LIKE '%Injection%'
-      OR process_name LIKE '%WebLogic%'
-      OR process_name LIKE '%vCenter%'
-      OR process_name LIKE '%HTTP.sys%'
-      OR process_name LIKE '%PHP.CGI%'
+      -- Root stem semantic matching (catches all current and future exploits)
+      process_name LIKE '%.Overflow%' 
+      OR process_name LIKE '%.Traversal%' 
+      OR process_name LIKE '%.Injection%' 
+      OR process_name LIKE '%.Execution%' 
+      OR process_name LIKE '%.RCE%'
+      OR process_name LIKE '%.Handling%'
+      OR process_name LIKE '%.Deserialization%'
+      OR process_name LIKE '%.Upload%'
+      OR process_name LIKE '%Log4j%'
+      OR process_name LIKE '%SSLVPN%'
+      OR process_name LIKE '%Exploit%'
+      -- Catch-all safety net for any critical IPS event
+      OR details LIKE '%"severity": "critical"%'
     )
   GROUP BY src_ip, dest_ip, process_name

@@ -4,7 +4,7 @@ technique_name: "OS Credential Dumping: Password Files Access"
 stage: Credential Access
 severity: critical
 params: {}
-phrase: "Unauthorized access to system password files ({extra}) on {dest_ip} from {src_ip}"
+phrase: "Unauthorized access to system credentials ({extra}) on {dest_ip} from {src_ip}"
 sql: |
   SELECT 
     min(timestamp) as ts_start,
@@ -19,8 +19,12 @@ sql: |
   FROM events
   WHERE event_type = 'ips_alert' 
     AND (
-      process_name LIKE '%Password.Files.Access%' 
+      -- Root stem matching for any credential theft attempt
+      process_name LIKE '%Password%' 
       OR process_name LIKE '%dump%'
       OR process_name LIKE '%mimikatz%'
+      OR process_name LIKE '%Credential%'
+      OR process_name LIKE '%Shadow%'
+      OR process_name LIKE '%SAM%'
     )
   GROUP BY src_ip, dest_ip, process_name

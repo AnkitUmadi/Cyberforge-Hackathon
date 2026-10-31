@@ -19,7 +19,10 @@ sql: |
   FROM events
   WHERE event_type = 'ips_alert' 
     AND (
+      -- Root stem matching for any privilege escalation attack
       process_name LIKE '%ZeroLogon%' 
-      OR process_name LIKE '%Privilege.Escalation%'
+      OR process_name LIKE '%.Escalat%'
+      OR process_name LIKE '%Privilege%'
+      OR process_name LIKE '%Elevat%'
     )
   GROUP BY src_ip, dest_ip, process_name

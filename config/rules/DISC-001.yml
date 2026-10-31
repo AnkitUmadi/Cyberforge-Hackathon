@@ -19,8 +19,11 @@ sql: |
   FROM events
   WHERE event_type = 'ips_alert' 
     AND (
+      -- Root stem matching for any active reconnaissance
       process_name LIKE '%Zone.Transfer%' 
       OR process_name LIKE '%Information.Disclosure%'
       OR process_name LIKE '%Scan%'
+      OR process_name LIKE '%Discovery%'
+      OR process_name LIKE '%Enumerat%'
     )
   GROUP BY src_ip, dest_ip, process_name
