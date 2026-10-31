@@ -698,7 +698,7 @@ export class CausalTerritorialEngine {
             ctx.globalAlpha = n.alpha;
 
             const isCrown = n.archetype === 'CROWN_JEWELS_AD' || n.type === 'DC';
-            const r = (isCrown ? 13 : 9) * n.scale;
+            const r = (isCrown ? 16 : 12) * n.scale;
 
             if (r > 0.5) {
                 let color = '#38bdf8'; // Host / default
@@ -726,11 +726,13 @@ export class CausalTerritorialEngine {
 
                 const isHovered = n.id === this.hoverNodeId;
                 const isSelected = n.id === this.selectedNodeId;
+                const nx = Math.round(n.currentX);
+                const ny = Math.round(n.currentY);
 
                 // Pulsing highlight ring on hover / selection
                 if (isHovered || isSelected) {
                     ctx.beginPath();
-                    ctx.arc(n.currentX, n.currentY, r + 5, 0, Math.PI * 2);
+                    ctx.arc(nx, ny, r + 6, 0, Math.PI * 2);
                     ctx.strokeStyle = isSelected ? '#38bdf8' : '#f59e0b';
                     ctx.lineWidth = 2.0 / effZoom;
                     ctx.stroke();
@@ -738,38 +740,38 @@ export class CausalTerritorialEngine {
 
                 // Node Circle Fill & Stroke
                 ctx.beginPath();
-                ctx.arc(n.currentX, n.currentY, r, 0, Math.PI * 2);
+                ctx.arc(nx, ny, r, 0, Math.PI * 2);
                 ctx.fillStyle = color;
                 ctx.fill();
                 ctx.strokeStyle = '#ffffff';
-                ctx.lineWidth = 1.5 / effZoom;
+                ctx.lineWidth = 1.6 / effZoom;
                 ctx.stroke();
 
                 // Concentric inner ring for crown jewels (Tier-0 Domain Controller)
                 if (isCrown) {
                     ctx.beginPath();
-                    ctx.arc(n.currentX, n.currentY, r * 0.6, 0, Math.PI * 2);
+                    ctx.arc(nx, ny, r * 0.6, 0, Math.PI * 2);
                     ctx.strokeStyle = '#ffffff';
-                    ctx.lineWidth = 1.0 / effZoom;
+                    ctx.lineWidth = 1.2 / effZoom;
                     ctx.stroke();
                 }
 
                 // Settling Shockwave Ripple
                 if (n.isSettling) {
                     ctx.beginPath();
-                    ctx.arc(n.currentX, n.currentY, r * (1.2 + 0.8 * (1.0 - n.progress)), 0, Math.PI * 2);
+                    ctx.arc(nx, ny, r * (1.2 + 0.8 * (1.0 - n.progress)), 0, Math.PI * 2);
                     ctx.strokeStyle = `rgba(245, 158, 11, ${1.0 - n.progress})`;
-                    ctx.lineWidth = 1.0 / effZoom;
+                    ctx.lineWidth = 1.2 / effZoom;
                     ctx.stroke();
                 }
 
                 // Short Type Code Inside Circle
                 if (r >= 8) {
                     ctx.fillStyle = '#ffffff';
-                    ctx.font = `bold ${Math.max(7, Math.min(10, 8.5 / effZoom))}px monospace`;
+                    ctx.font = `bold ${Math.max(8, Math.min(11, 9.5 / effZoom))}px monospace`;
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'middle';
-                    ctx.fillText(typeCode, n.currentX, n.currentY);
+                    ctx.fillText(typeCode, nx, ny);
                 }
 
                 // Anti-Collision Dark Rounded Pill Badge Underneath Node
@@ -777,20 +779,20 @@ export class CausalTerritorialEngine {
                 const timeStr = `T+${Math.round(n.birthTime)}m`;
                 const displayStr = `${labelStr} [${timeStr}]`;
 
-                ctx.font = 'bold 9px monospace';
+                ctx.font = 'bold 10px monospace';
                 const strW = ctx.measureText(displayStr).width;
-                const badgeW = strW + 12;
-                const badgeH = 16;
-                const badgeX = n.currentX - badgeW / 2;
-                const badgeY = n.currentY + r + 4;
+                const badgeW = Math.round(strW + 14);
+                const badgeH = 18;
+                const badgeX = Math.round(nx - badgeW / 2);
+                const badgeY = Math.round(ny + r + 5);
 
-                ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
-                ctx.strokeStyle = isSelected ? '#38bdf8' : (isCrown ? 'rgba(244, 63, 94, 0.6)' : 'rgba(51, 65, 85, 0.85)');
-                ctx.lineWidth = 1.0 / effZoom;
+                ctx.fillStyle = 'rgba(9, 14, 26, 0.96)';
+                ctx.strokeStyle = isSelected ? '#38bdf8' : (isCrown ? 'rgba(244, 63, 94, 0.7)' : 'rgba(51, 65, 85, 0.9)');
+                ctx.lineWidth = 1.2 / effZoom;
 
                 if (typeof ctx.roundRect === 'function') {
                     ctx.beginPath();
-                    ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 3);
+                    ctx.roundRect(badgeX, badgeY, badgeW, badgeH, 4);
                     ctx.fill();
                     ctx.stroke();
                 } else {
@@ -798,10 +800,10 @@ export class CausalTerritorialEngine {
                     ctx.strokeRect(badgeX, badgeY, badgeW, badgeH);
                 }
 
-                ctx.fillStyle = isCrown ? '#fca5a5' : '#f8fafc';
+                ctx.fillStyle = isCrown ? '#fca5a5' : '#ffffff';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
-                ctx.fillText(displayStr, n.currentX, badgeY + badgeH / 2);
+                ctx.fillText(displayStr, nx, badgeY + badgeH / 2);
             }
 
             ctx.restore();

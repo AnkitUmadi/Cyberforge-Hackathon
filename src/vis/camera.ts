@@ -29,12 +29,12 @@ export interface CameraConfig {
 
 export const DEFAULT_CAMERA_CONFIG: CameraConfig = {
     tau: 35.0,
-    baselineWeight: 0.05,
-    margin: 120,
-    minRadius: 140,
-    crownJewelBias: 0.25,
-    minZoom: 0.25,
-    maxZoom: 1.6
+    baselineWeight: 0.08,
+    margin: 40,
+    minRadius: 80,
+    crownJewelBias: 0.10,
+    minZoom: 0.95,
+    maxZoom: 2.2
 };
 
 export class GravityWellCamera {

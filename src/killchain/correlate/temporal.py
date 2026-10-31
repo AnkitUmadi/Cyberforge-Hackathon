@@ -80,48 +80,101 @@ def compute_temporal_dynamics(
 
     # =========================================================================
     # SECTION 1: BUILD EXACT DATA CONTRACT (events, nodes, reach)
+    # Dynamically extracted from actual incident hops & blast radius
     # =========================================================================
-    user_id = f"user-{usr}" if usr and usr != "unauthenticated" else "user-svc_admin"
-    c2_ip = "185.251.111.41"
+    user_id = f"user-{usr}" if usr and usr != "unauthenticated" else f"user-svc_{root_entity.split('.')[-1]}"
+
+    def resolve_subnet(ip_str: str) -> str:
+        if not ip_str:
+            return "WAN"
+        if ip_str.startswith("10.10.99."):
+            return "10.10.99.0/24"
+        if ip_str.startswith("10.10.20."):
+            return "10.10.20.0/24"
+        if ip_str.startswith("10.10.1."):
+            return "10.10.1.0/24"
+        if ip_str.startswith("10.10."):
+            parts = ip_str.split(".")
+            return f"{parts[0]}.{parts[1]}.{parts[2]}.0/24"
+        return "WAN"
+
+    root_subnet = resolve_subnet(root_entity)
+
+    # 1. Dynamically collect unique C2, lateral, and DC targets from actual hops
+    c2_candidates = []
+    lateral_candidates = []
+    has_dc_breach = False
+
     for h in sorted_hops:
+        sip = h.get("src_ip", "")
         dip = h.get("dest_ip", "")
-        if dip and dip != root_entity and not dip.startswith("10.10."):
-            c2_ip = dip
-            break
+        stg = str(h.get("stage", ""))
+        ev_text = str(h.get("evidence", ""))
 
-    peer_ips = blast_radius.get("hop1_sample_peers", ["10.10.1.12", "10.10.1.18", "10.10.1.25"])[:3]
+        if dip == "10.10.99.1" or "DCSync" in ev_text or "Golden" in ev_text or "Domain Controller" in ev_text:
+            has_dc_breach = True
 
-    # Nodes contract: { id, type, criticality (0-1), subnet, label }
+        for ip in (sip, dip):
+            if not ip or ip == root_entity or ip == adversary_ip:
+                continue
+            if ip.startswith("10.10.99."):
+                continue
+            if not ip.startswith("10.10."):
+                if ip not in c2_candidates:
+                    c2_candidates.append(ip)
+            else:
+                if ip not in lateral_candidates:
+                    lateral_candidates.append(ip)
+
+    # Dynamic limits: 1 to 3 distinct C2 / external IPs
+    c2_ips = c2_candidates[:min(3, max(1, len(c2_candidates)))] if c2_candidates else ["185.251.111.41"]
+
+    # Sample peers scaled dynamically by incident scope
+    sample_peer_pool = blast_radius.get("hop1_sample_peers", ["10.10.20.1", "10.10.20.2", "10.10.20.10", "10.10.20.20", "10.10.20.50"])
+    desired_peer_count = 2 if len(sorted_hops) < 16 else (4 if len(sorted_hops) > 24 else 3)
+    peer_ips = [p for p in sample_peer_pool if p != root_entity and p not in lateral_candidates][:desired_peer_count]
+
+    # Build dynamic nodes contract
     nodes_contract = [
         {"id": adversary_ip, "type": "WAN", "criticality": 0.1, "subnet": "WAN", "label": adversary_ip},
-        {"id": root_entity, "type": "HOST", "criticality": 0.75, "subnet": "10.10.1.0/24", "label": root_entity},
-        {"id": user_id, "type": "USER", "criticality": 0.65, "subnet": "IDENTITY", "label": usr},
-        {"id": c2_ip, "type": "C2", "criticality": 0.35, "subnet": "WAN", "label": c2_ip}
+        {"id": root_entity, "type": "HOST", "criticality": 0.75, "subnet": root_subnet, "label": root_entity},
+        {"id": user_id, "type": "USER", "criticality": 0.65, "subnet": "IDENTITY", "label": usr or "svc_admin"}
     ]
+
+    for c2 in c2_ips:
+        nodes_contract.append({
+            "id": c2, "type": "C2", "criticality": 0.35, "subnet": "WAN", "label": f"{c2} (C2)"
+        })
+
+    for lat in lateral_candidates[:2]:
+        nodes_contract.append({
+            "id": lat, "type": "HOST", "criticality": 0.80, "subnet": resolve_subnet(lat), "label": lat
+        })
+
     for p_ip in peer_ips:
         nodes_contract.append({
-            "id": p_ip, "type": "PEER", "criticality": 0.45, "subnet": "10.10.1.0/24", "label": p_ip
+            "id": p_ip, "type": "PEER", "criticality": 0.45, "subnet": root_subnet, "label": p_ip
         })
-    # Crown jewels (DC and DB Vault)
-    nodes_contract.append({"id": "10.10.99.1", "type": "DC", "criticality": 1.0, "subnet": "10.10.99.0/24", "label": "10.10.99.1 (DC)"})
-    nodes_contract.append({"id": "10.10.99.10", "type": "DB", "criticality": 0.95, "subnet": "10.10.99.0/24", "label": "10.10.99.10 (DB)"})
 
-    # Reach contract: { src, dst, rho }
-    # rho = normalised weight of ALLOWED sessions between the two hosts/segments in Fortinet logs
+    # Crown Jewels
+    dc_crit = 1.0 if has_dc_breach else 0.95
+    nodes_contract.append({"id": "10.10.99.1", "type": "DC", "criticality": dc_crit, "subnet": "10.10.99.0/24", "label": "10.10.99.1 (DC)"})
+    nodes_contract.append({"id": "10.10.99.10", "type": "DB", "criticality": 0.90, "subnet": "10.10.99.0/24", "label": "10.10.99.10 (DB)"})
+
+    # Reach contract
     reach_contract = [
         {"src": adversary_ip, "dst": root_entity, "rho": 1.0},
-        {"src": root_entity, "dst": user_id, "rho": 0.90},
-        {"src": root_entity, "dst": c2_ip, "rho": 0.85}
+        {"src": root_entity, "dst": user_id, "rho": 0.90}
     ]
+    for c2 in c2_ips:
+        reach_contract.append({"src": root_entity, "dst": c2, "rho": 0.85})
     for p_ip in peer_ips:
         reach_contract.append({"src": root_entity, "dst": p_ip, "rho": 0.95})
         reach_contract.append({"src": p_ip, "dst": "10.10.99.1", "rho": 0.80})
         reach_contract.append({"src": p_ip, "dst": "10.10.99.10", "rho": 0.75})
 
-    # Events contract: { id, src, dst, stage, edgeLabel, t_min, conf, privLevel, type, label }
+    # Events contract
     events_contract = []
-    
-    # Event 1: Initial compromise
     events_contract.append({
         "id": "ev-01",
         "src": adversary_ip,
@@ -135,19 +188,16 @@ def compute_temporal_dynamics(
         "label": root_entity
     })
 
-    # Find earliest user, c2, and peer events from hops_with_time
     t_user = 21.0
-    t_c2 = 65.0
-    t_peers = [135.0, 165.0, 195.0]
-
+    t_c2_map = {}
     for h in hops_with_time:
         stg = h["stage"]
         if "Credential" in stg or "Privilege" in stg:
             t_user = min(t_user, h["t_min"])
-        elif "Command" in stg or "Exfil" in stg:
-            t_c2 = min(t_c2, h["t_min"])
+        dip = h.get("dest_ip", "")
+        if dip in c2_ips and dip not in t_c2_map:
+            t_c2_map[dip] = h["t_min"]
 
-    # Event 2: Credential theft
     events_contract.append({
         "id": "ev-02",
         "src": root_entity,
@@ -158,26 +208,28 @@ def compute_temporal_dynamics(
         "conf": 0.95,
         "privLevel": 2.0,
         "type": "USER",
-        "label": usr
+        "label": usr or "svc_admin"
     })
 
-    # Event 3: C2 Beacon
-    events_contract.append({
-        "id": "ev-03",
-        "src": root_entity,
-        "dst": c2_ip,
-        "stage": "Command & Control",
-        "edgeLabel": "[:EXFIL_C2]",
-        "t_min": round(t_c2, 1),
-        "conf": 0.92,
-        "privLevel": 3.5,
-        "type": "C2",
-        "label": c2_ip
-    })
+    for idx, c2 in enumerate(c2_ips):
+        c2_time = t_c2_map.get(c2, 65.0 + idx * 25.0)
+        events_contract.append({
+            "id": f"ev-c2-{idx+1}",
+            "src": root_entity,
+            "dst": c2,
+            "stage": "Command & Control",
+            "edgeLabel": "[:EXFIL_C2]",
+            "t_min": round(c2_time, 1),
+            "conf": 0.92,
+            "privLevel": 3.5,
+            "type": "C2",
+            "label": c2
+        })
 
     # Events for subnet peers
+    span = max(180.0, duration_minutes)
     for p_idx, p_ip in enumerate(peer_ips):
-        p_time = round(t_peers[min(p_idx, len(t_peers)-1)], 1)
+        p_time = round(120.0 + (p_idx + 1) * (span - 140.0) / (len(peer_ips) + 1), 1)
         events_contract.append({
             "id": f"ev-p{p_idx+1}",
             "src": root_entity,
@@ -191,10 +243,8 @@ def compute_temporal_dynamics(
             "label": p_ip
         })
 
-    # Sort events strictly by t_min
     events_contract.sort(key=lambda e: e["t_min"])
 
-    # First compromise mapping
     first_compromise = {adversary_ip: 0.0}
     for ev in events_contract:
         d = ev["dst"]
