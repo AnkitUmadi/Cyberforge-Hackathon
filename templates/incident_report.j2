@@ -812,58 +812,59 @@
             }
 
             updatePhysics() {
-                if (this.alpha <= 0.002) {
-                    this.alpha = 0;
-                    return; // Physics is settled in equilibrium! Zero runaway drift!
-                }
-                this.alpha *= 0.985; // smooth cooling decay
+                const kRepel = 18000;
+                const kSpring = 0.08;
+                const restLength = 135;
 
-                const kRepel = 2400;
-                const kSpring = 0.045;
-                const restLength = 115;
-
-                // Repulsion between all nodes
+                // 1. Repulsion between all node pairs
                 for (let i = 0; i < this.nodes.length; i++) {
                     for (let j = i + 1; j < this.nodes.length; j++) {
                         const n1 = this.nodes[i];
                         const n2 = this.nodes[j];
                         const dx = n2.x - n1.x;
                         const dy = n2.y - n1.y;
-                        const rawDist = Math.hypot(dx, dy) || 1;
-                        const dist = Math.max(rawDist, 45); // prevent singularity
-                        const force = Math.min((kRepel / (dist * dist)), 8) * this.alpha;
-                        const fx = (dx / rawDist) * force;
-                        const fy = (dy / rawDist) * force;
+                        const dist = Math.hypot(dx, dy) || 1;
+                        
+                        const force = Math.min(kRepel / (dist * dist), 18);
+                        const fx = (dx / dist) * force;
+                        const fy = (dy / dist) * force;
 
                         if (n1 !== this.draggedNode) { n1.vx -= fx; n1.vy -= fy; }
                         if (n2 !== this.draggedNode) { n2.vx += fx; n2.vy += fy; }
                     }
                 }
 
-                // Spring forces along edges
+                // 2. Spring forces along edges
                 this.edges.forEach(e => {
                     const n1 = e.source;
                     const n2 = e.target;
                     const dx = n2.x - n1.x;
                     const dy = n2.y - n1.y;
                     const dist = Math.hypot(dx, dy) || 1;
-                    const force = (dist - restLength) * kSpring * this.alpha;
+                    const force = (dist - restLength) * kSpring;
                     const fx = (dx / dist) * force;
                     const fy = (dy / dist) * force;
 
                     if (n1 !== this.draggedNode) { n1.vx += fx; n1.vy += fy; }
-                    if (n2 !== this.draggedNode) { n2.vx += fx; n2.vy += fy; }
+                    if (n2 !== this.draggedNode) { n2.vx -= fx; n2.vy += fy; }
                 });
 
-                // Center gravity and velocity damping
+                // 3. Center gravity towards (0, 0) and viewport clamping
+                const halfW = (this.canvas.width / (2 * (this.zoom || 1))) - 45;
+                const halfH = (this.canvas.height / (2 * (this.zoom || 1))) - 40;
+
                 this.nodes.forEach(n => {
                     if (n !== this.draggedNode) {
-                        n.vx -= n.x * 0.015 * this.alpha;
-                        n.vy -= n.y * 0.015 * this.alpha;
-                        n.vx *= 0.82;
-                        n.vy *= 0.82;
+                        n.vx -= n.x * 0.04;
+                        n.vy -= n.y * 0.04;
+                        n.vx *= 0.65;
+                        n.vy *= 0.65;
                         n.x += n.vx;
                         n.y += n.vy;
+
+                        // Viewport bounds clamping - nodes NEVER fly off canvas!
+                        n.x = Math.max(-halfW, Math.min(halfW, n.x));
+                        n.y = Math.max(-halfH, Math.min(halfH, n.y));
                     }
                 });
             }
