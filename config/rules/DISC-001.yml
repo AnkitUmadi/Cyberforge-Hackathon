@@ -1,0 +1,26 @@
+id: DISC-001
+technique_id: T1087
+technique_name: "Account and Network Discovery"
+stage: Discovery
+severity: medium
+params: {}
+phrase: "Reconnaissance and network enumeration ({extra}) from {src_ip} targeting {dest_ip}"
+sql: |
+  SELECT 
+    min(timestamp) as ts_start,
+    max(timestamp) as ts_end,
+    min(usr) as usr,
+    min(src_host) as src_host,
+    min(dest_host) as dest_host,
+    src_ip,
+    dest_ip,
+    count(*) as event_count,
+    process_name as extra
+  FROM events
+  WHERE event_type = 'ips_alert' 
+    AND (
+      process_name LIKE '%Zone.Transfer%' 
+      OR process_name LIKE '%Information.Disclosure%'
+      OR process_name LIKE '%Scan%'
+    )
+  GROUP BY src_ip, dest_ip, process_name

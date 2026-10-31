@@ -23,5 +23,10 @@ sql: |
       OR process_name LIKE '%SSLVPN%' 
       OR process_name LIKE '%Buffer.Overflow%' 
       OR process_name LIKE '%Directory.Traversal%'
+      OR process_name LIKE '%Injection%'
+      OR process_name LIKE '%WebLogic%'
+      OR process_name LIKE '%vCenter%'
+      OR process_name LIKE '%HTTP.sys%'
+      OR process_name LIKE '%PHP.CGI%'
     )
   GROUP BY src_ip, dest_ip, process_name

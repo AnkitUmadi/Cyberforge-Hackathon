@@ -1,0 +1,26 @@
+id: CRED-001
+technique_id: T1003
+technique_name: "OS Credential Dumping: Password Files Access"
+stage: Credential Access
+severity: critical
+params: {}
+phrase: "Unauthorized access to system password files ({extra}) on {dest_ip} from {src_ip}"
+sql: |
+  SELECT 
+    min(timestamp) as ts_start,
+    max(timestamp) as ts_end,
+    min(usr) as usr,
+    min(src_host) as src_host,
+    min(dest_host) as dest_host,
+    src_ip,
+    dest_ip,
+    count(*) as event_count,
+    process_name as extra
+  FROM events
+  WHERE event_type = 'ips_alert' 
+    AND (
+      process_name LIKE '%Password.Files.Access%' 
+      OR process_name LIKE '%dump%'
+      OR process_name LIKE '%mimikatz%'
+    )
+  GROUP BY src_ip, dest_ip, process_name
