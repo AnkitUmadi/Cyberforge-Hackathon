@@ -655,27 +655,17 @@
                     isLookahead: true
                 });
             }
-                this.edges.push({
-                    source: nHost,
-                    target: nDB,
-                    rel: '[:BLAST_VECTOR]',
-                    tech_id: 'HOP-2',
-                    stage: 'Predictive Reachability',
-                    evidence: 'Remote SQL Injection / Credential Theft',
-                    isLookahead: true
-                });
-            }
 
             resizeCanvas() {
-                const rect = this.canvas.parentElement.getBoundingClientRect();
-                const w = rect.width || this.canvas.parentElement.clientWidth || 800;
-                const h = rect.height || 480;
-                const dpr = window.devicePixelRatio || 1;
-                this.canvas.width = Math.floor(w * dpr);
-                this.canvas.height = Math.floor(h * dpr);
+                const parent = this.canvas.parentElement;
+                const rect = parent ? parent.getBoundingClientRect() : null;
+                const w = (rect && rect.width > 50) ? Math.floor(rect.width) : (parent ? parent.clientWidth : 800) || 800;
+                const h = (rect && rect.height > 50) ? Math.floor(rect.height) : (parent ? parent.clientHeight : 480) || 480;
+
+                this.canvas.width = w;
+                this.canvas.height = h;
                 this.cssWidth = w;
                 this.cssHeight = h;
-                this.dpr = dpr;
 
                 if (this.panX === 0 && this.panY === 0) {
                     this.panX = w / 2;
@@ -684,7 +674,20 @@
             }
 
             setupEvents() {
-                window.addEventListener('resize', () => this.resizeCanvas());
+                window.addEventListener('resize', () => {
+                    this.resizeCanvas();
+                    this.render();
+                });
+
+                if (window.ResizeObserver && this.canvas.parentElement) {
+                    try {
+                        const ro = new ResizeObserver(() => {
+                            this.resizeCanvas();
+                            this.render();
+                        });
+                        ro.observe(this.canvas.parentElement);
+                    } catch (e) {}
+                }
 
                 const getMousePos = (e) => {
                     const rect = this.canvas.getBoundingClientRect();
@@ -867,22 +870,20 @@
 
             render() {
                 const ctx = this.ctx;
-                const dpr = this.dpr || 1;
-                const w = this.cssWidth || 800;
-                const h = this.cssHeight || 480;
+                const w = this.canvas.width;
+                const h = this.canvas.height;
 
                 ctx.save();
-                ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
                 ctx.clearRect(0, 0, w, h);
 
                 // Neo4j Bloom style background grid dots
                 ctx.fillStyle = '#1e293b';
-                const gridSize = 32 * this.zoom;
-                const offX = (this.panX % gridSize);
-                const offY = (this.panY % gridSize);
+                const gridSize = Math.max(16, 32 * this.zoom);
+                const offX = ((this.panX % gridSize) + gridSize) % gridSize;
+                const offY = ((this.panY % gridSize) + gridSize) % gridSize;
                 for (let x = offX; x < w; x += gridSize) {
                     for (let y = offY; y < h; y += gridSize) {
-                        ctx.fillRect(x, y, 1.2, 1.2);
+                        ctx.fillRect(x, y, 1.4, 1.4);
                     }
                 }
 
@@ -1018,14 +1019,25 @@
         }
 
         // Initialize all incident graphs
-        window.onload = () => {
+        function initAllGraphs() {
+            if (!INCIDENTS_DATA || typeof InteractiveForceGraph === 'undefined') return;
             INCIDENTS_DATA.forEach(inc => {
                 const canvasId = `graph-canvas-${inc.incident_id}`;
-                if (document.getElementById(canvasId)) {
+                const el = document.getElementById(canvasId);
+                if (el && !GRAPH_INSTANCES[inc.incident_id]) {
                     GRAPH_INSTANCES[inc.incident_id] = new InteractiveForceGraph(canvasId, inc);
                 }
             });
-        };
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initAllGraphs);
+        } else {
+            initAllGraphs();
+        }
+        window.addEventListener('load', initAllGraphs);
+        setTimeout(initAllGraphs, 150);
+        setTimeout(initAllGraphs, 600);
 
         function resetGraphView(incId) {
             if (GRAPH_INSTANCES[incId]) GRAPH_INSTANCES[incId].resetView();
