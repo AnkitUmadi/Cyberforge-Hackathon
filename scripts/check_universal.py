@@ -2,31 +2,37 @@ import duckdb
 
 conn = duckdb.connect('out/killchain.duckdb')
 
-exploit_query = """
-SELECT process_name, count(1) 
-FROM events 
-WHERE event_type = 'ips_alert' 
-  AND (
-    process_name LIKE '%.Overflow%' 
-    OR process_name LIKE '%.Traversal%' 
-    OR process_name LIKE '%.Injection%' 
-    OR process_name LIKE '%.Execution%' 
-    OR process_name LIKE '%.RCE%' 
-    OR process_name LIKE '%.Handling%' 
-    OR process_name LIKE '%.Deserialization%' 
-    OR process_name LIKE '%.Upload%' 
-    OR process_name LIKE '%Log4j%' 
-    OR process_name LIKE '%SSLVPN%' 
-    OR process_name LIKE '%XSS%' 
-    OR process_name LIKE '%Exploit%'
-  )
-GROUP BY process_name 
-ORDER BY count(1) DESC
-"""
+ips_total = conn.execute("SELECT count(1) FROM events WHERE event_type = 'ips_alert'").fetchone()[0]
+virus_total = conn.execute("SELECT count(1) FROM events WHERE event_type = 'virus_alert'").fetchone()[0]
+web_blocked = conn.execute("SELECT count(1) FROM events WHERE event_type = 'webfilter' AND status = 'BLOCKED'").fetchone()[0]
+login_failures = conn.execute("SELECT count(1) FROM events WHERE event_type = 'login' AND status = 'FAILURE'").fetchone()[0]
 
-rows = conn.execute(exploit_query).fetchall()
-print(f"Total True Exploit Events: {sum(r[1] for r in rows):,}")
-print(f"Total Unique Exploit Signatures: {len(rows)}")
-print("\nBreakdown of True Exploits:")
-for r in rows:
-    print(f"  {r[0]:<55}: {r[1]}")
+print(f"Total IPS alerts: {ips_total:,}")
+print(f"Total Virus alerts: {virus_total:,}")
+print(f"Total Webfilter blocked: {web_blocked:,}")
+print(f"Total Login failures: {login_failures:,}")
+
+# How many failed logins are part of bursts >= 5 or >= 10?
+burst_5 = conn.execute("""
+    WITH bf AS (
+        SELECT count(1) as cnt 
+        FROM events 
+        WHERE event_type = 'login' AND status = 'FAILURE'
+        GROUP BY usr, src_ip
+        HAVING count(1) >= 5
+    )
+    SELECT sum(cnt) FROM bf
+""").fetchone()[0]
+print(f"Failed logins in bursts >= 5: {burst_5:,}")
+
+burst_20 = conn.execute("""
+    WITH bf AS (
+        SELECT count(1) as cnt 
+        FROM events 
+        WHERE event_type = 'login' AND status = 'FAILURE'
+        GROUP BY usr, src_ip
+        HAVING count(1) >= 20
+    )
+    SELECT sum(cnt) FROM bf
+""").fetchone()[0]
+print(f"Failed logins in bursts >= 20: {burst_20:,}")

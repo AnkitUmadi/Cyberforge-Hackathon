@@ -41,6 +41,26 @@ CREATE TABLE IF NOT EXISTS alert_evidence (
     alert_id BIGINT,
     event_id BIGINT
 );
+
+CREATE TABLE IF NOT EXISTS incidents (
+    incident_id BIGINT,
+    title VARCHAR,
+    severity VARCHAR,
+    root_entity VARCHAR,
+    target_entity VARCHAR,
+    ts_start TIMESTAMP,
+    ts_end TIMESTAMP,
+    alert_count INTEGER,
+    stages_covered VARCHAR,
+    path_summary VARCHAR,
+    lookahead_2hop VARCHAR
+);
+
+CREATE TABLE IF NOT EXISTS incident_alerts (
+    incident_id BIGINT,
+    alert_id BIGINT,
+    hop_order INTEGER
+);
 """
 
 def get_connection(db_path: str, memory_limit: str = "4GB", threads: int = 4, temp_dir: str = None):
