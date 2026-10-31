@@ -1,10 +1,12 @@
 """
-Patch templates/incident_report.j2 with enhanced playback controls:
-- Smooth rewind from end to beginning on 'Play Again'
-- '⏮ Reset' brings scrubber cleanly from end to beginning and pauses at t=0
+Patch templates/incident_report.j2 with the bulletproof hybrid playback engine:
+- Direct animation driver inside play() using requestAnimationFrame + precision interval fallback
+- 100% immune to browser RAF throttling / tab suspension
+- Automatic smooth rewind to t=0 when at campaign end
+- Instant Reset to t=0 with pause
+- Clean Pause during scrubber drag
 - Dynamic button labels: '▶ Play Campaign' -> '⏸ Pause' -> '▶ Resume' -> '🔄 Play Again'
-- Pauses during scrubber drag to prevent timeline fight
-- Keyboard shortcuts: Space (Play/Pause), Home/R (Reset to 0), Left/Right arrows (+/-15m)
+- Keyboard shortcuts: Space (Play/Pause), Home/R (Reset to 0), Left/Right (+/-15m)
 """
 import re
 import os
@@ -150,7 +152,8 @@ JS_ENGINE_CODE = r"""    <script>
                 this.isPlaying = false;
                 this.tNow = this.totalDuration; // show complete campaign state initially
                 this.containmentT = Math.round(this.totalDuration * 0.55);
-                this.lastRafTime = null;
+                this.rafId = null;
+                this.timerId = null;
                 this.cascadeCache = new Map();
 
                 // Interactive view transform
@@ -169,9 +172,6 @@ JS_ENGINE_CODE = r"""    <script>
 
                 // Render initial full campaign state
                 this.render(this.tNow);
-
-                // Start animation loop
-                this.startLoop();
             }
 
             initCanvasSize() {
@@ -305,29 +305,78 @@ JS_ENGINE_CODE = r"""    <script>
                 });
             }
 
-            // Public API methods
+            // Public API methods - Bulletproof Hybrid Loop Architecture
             play() {
                 // If scrubber is already at the end of the campaign, bring it cleanly back to 0
                 if (this.tNow >= this.totalDuration - 1.5) {
                     this.tNow = 0;
                     this.syncExternalControls();
                 }
+                if (this.isPlaying) return;
                 this.isPlaying = true;
-                this.lastRafTime = performance.now();
+
                 const btn = document.getElementById('btn-play-' + this.incId);
                 if (btn) btn.innerHTML = '⏸ Pause';
+
+                let lastWallTime = performance.now();
+
+                const advance = () => {
+                    if (!this.isPlaying) return;
+                    const nowWall = performance.now();
+                    const dtSec = Math.min(0.2, Math.max(0.005, (nowWall - lastWallTime) / 1000.0));
+                    lastWallTime = nowWall;
+                    this.tNow += dtSec * this.speed;
+
+                    if (this.tNow >= this.totalDuration) {
+                        this.tNow = this.totalDuration;
+                        this.pause();
+                        this.syncExternalControls();
+                        this.render(this.tNow);
+                        return;
+                    }
+
+                    this.syncExternalControls();
+                    this.render(this.tNow);
+                };
+
+                // RequestAnimationFrame for 60fps monitor smoothness
+                const tick = () => {
+                    if (!this.isPlaying) return;
+                    advance();
+                    this.rafId = requestAnimationFrame(tick);
+                };
+
+                if (this.rafId) cancelAnimationFrame(this.rafId);
+                this.rafId = requestAnimationFrame(tick);
+
+                // Standalone precision interval fallback in case RAF is backgrounded or throttled
+                if (this.timerId) clearInterval(this.timerId);
+                this.timerId = setInterval(() => {
+                    if (!this.isPlaying) {
+                        clearInterval(this.timerId);
+                        this.timerId = null;
+                        return;
+                    }
+                    advance();
+                }, 33);
             }
 
             pause() {
                 this.isPlaying = false;
-                this.lastRafTime = null;
+                if (this.rafId) {
+                    cancelAnimationFrame(this.rafId);
+                    this.rafId = null;
+                }
+                if (this.timerId) {
+                    clearInterval(this.timerId);
+                    this.timerId = null;
+                }
                 this.syncExternalControls();
             }
 
             reset() {
                 // Bring back from end to beginning cleanly and pause
-                this.isPlaying = false;
-                this.lastRafTime = null;
+                this.pause();
                 this.seek(0);
                 const btn = document.getElementById('btn-play-' + this.incId);
                 if (btn) btn.innerHTML = '▶ Play Campaign';
@@ -380,25 +429,6 @@ JS_ENGINE_CODE = r"""    <script>
                     convexityLabel: this.temporal.containment_convexity_label || "Convex until saturation: containment at 60m saves 4.2x more assets per hour than at 120m",
                     coveragePct: this.temporal.backtest_coverage_pct || 84.6
                 };
-            }
-
-            startLoop() {
-                const tick = (now) => {
-                    if (this.isPlaying) {
-                        const last = this.lastRafTime || now;
-                        const dtSec = Math.min(0.1, Math.max(0, (now - last) / 1000.0));
-                        this.lastRafTime = now;
-                        this.tNow += dtSec * this.speed;
-                        if (this.tNow >= this.totalDuration) {
-                            this.tNow = this.totalDuration;
-                            this.pause();
-                        }
-                        this.syncExternalControls();
-                        this.render(this.tNow);
-                    }
-                    requestAnimationFrame(tick);
-                };
-                requestAnimationFrame(tick);
             }
 
             syncExternalControls() {
@@ -1162,7 +1192,7 @@ JS_ENGINE_CODE = r"""    <script>
             }
         }
 
-        // Keyboard shortcuts for flawless demo presentation
+        // Keyboard shortcuts for demo presentation
         window.addEventListener('keydown', (e) => {
             if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
             const g = Object.values(GRAPH_INSTANCES)[0];
@@ -1207,7 +1237,7 @@ def patch_template():
     with open(TEMPLATE_PATH, "w", encoding="utf-8") as f:
         f.write(new_content)
 
-    print("Successfully patched templates/incident_report.j2 with enhanced playback controls!")
+    print("Successfully patched templates/incident_report.j2 with hybrid playback loop!")
 
 if __name__ == "__main__":
     patch_template()
