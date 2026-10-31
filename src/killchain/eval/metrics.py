@@ -96,19 +96,29 @@ def evaluate_engine(db_path: str = "out/killchain.duckdb") -> Dict[str, Any]:
     sample_lookahead = conn.execute("SELECT lookahead_2hop FROM incidents LIMIT 1").fetchone()
     lookahead_latency_ms = (time.time() - t0) * 1000
 
+    total_events = conn.execute("SELECT count(1) FROM events").fetchone()[0]
+    total_hops = conn.execute("SELECT count(1) FROM incident_alerts").fetchone()[0]
+
     conn.close()
 
     # Scorecard
     metrics = {
+        "total_events": total_events,
+        "total_alerts": total_alert_count,
+        "total_incidents": total_incidents,
+        "total_hops": total_hops,
         "detection_rate": round(detection_rate, 2),
         "technique_accuracy": round(technique_accuracy, 2),
         "path_fidelity": round(path_fidelity, 2),
         "false_alarm_rate": round(false_alarm_rate, 2),
-        "lookahead_latency_ms": round(lookahead_latency_ms, 3),
-        "total_true_threats": true_threats,
-        "total_alerts_correlated": total_alert_count,
-        "total_incidents_formed": total_incidents
+        "lookahead_latency_ms": round(lookahead_latency_ms, 3)
     }
+
+    print(f"\n  DATASET & ENGINE SCALE:")
+    print(f"  [-] Total Events Ingested:      {total_events:,}")
+    print(f"  [-] Alert Detections Flagged:   {total_alert_count:,}")
+    print(f"  [-] 4D Correlated Incidents:    {total_incidents:,}")
+    print(f"  [-] Causal Attack Hops Tracked: {total_hops:,}")
 
     print(f"\n{'PRD EVALUATION METRIC':<35} {'TARGET':<18} {'ACTUAL SCORE':<15} {'STATUS'}")
     print("-" * 75)
