@@ -88,7 +88,7 @@ def normalize_log_record(raw: Dict[str, str], file_idx: int, row_idx: int) -> Di
         'details': details
     }
 
-def ingest_file(file_path: str, conn, file_idx: int = 0, batch_size: int = 100000):
+def ingest_file(file_path: str, conn, file_idx: int = 0, batch_size: int = 100000, max_lines: int = None):
     print(f"Ingesting {file_path} (File index {file_idx})...")
     start_time = time.time()
     
@@ -135,7 +135,11 @@ def ingest_file(file_path: str, conn, file_idx: int = 0, batch_size: int = 10000
             if len(batch) >= batch_size:
                 _flush_batch(conn, batch, schema)
                 batch = []
-                print(f"  Ingested {total_rows:,} rows so far...")
+                print(f"  Ingested {total_rows:,} rows so far... ({total_rows / (time.time() - start_time):,.0f} rows/s)")
+
+            if max_lines and total_rows >= max_lines:
+                print(f"Reached maximum line limit of {max_lines:,}.")
+                break
                 
     if batch:
         _flush_batch(conn, batch, schema)
@@ -169,13 +173,25 @@ def _flush_batch(conn, batch: List[Dict[str, Any]], schema: pa.Schema):
     conn.unregister('temp_arrow_batch')
 
 if __name__ == "__main__":
+    import argparse
     from pathlib import Path
     ROOT = Path(__file__).resolve().parent.parent.parent
-    db_file = str(ROOT / "out" / "killchain.duckdb")
-    sample_file = str(ROOT / "data" / "sample_100MB.log")
-    conn = get_connection(db_file)
+
+    parser = argparse.ArgumentParser(description="Cyberforge Fast Log Ingest Engine")
+    parser.add_argument("--log", type=str, default=str(ROOT / "data" / "sample_100MB.log"), help="Path to log file")
+    parser.add_argument("--db", type=str, default=str(ROOT / "out" / "killchain.duckdb"), help="Path to DuckDB")
+    parser.add_argument("--batch-size", type=int, default=100000, help="Ingestion batch size")
+    parser.add_argument("--max-lines", type=int, default=None, help="Maximum lines to ingest")
+    parser.add_argument("--clean", action="store_true", help="Clean events table before ingestion")
+    args = parser.parse_args()
+
+    conn = get_connection(args.db)
     init_db(conn)
-    ingest_file(sample_file, conn, file_idx=0)
+    if args.clean:
+        print("Clearing events table for fresh ingestion...")
+        conn.execute("DELETE FROM events;")
+
+    ingest_file(args.log, conn, file_idx=0, batch_size=args.batch_size, max_lines=args.max_lines)
     
     count = conn.execute("SELECT count(*) FROM events;").fetchone()[0]
     print(f"Total rows in DuckDB events table: {count:,}")

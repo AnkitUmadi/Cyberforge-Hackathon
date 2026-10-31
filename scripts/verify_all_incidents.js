@@ -71,23 +71,18 @@ async function run() {
         });
         await new Promise(r => setTimeout(r, 1500));
 
-        // Evaluate all 5 incidents
+        // Evaluate all top incidents dynamically
         const evalRes = await cdpSend('Runtime.evaluate', {
             expression: `(() => {
                 const results = {};
-                for (const id of [1, 2, 3, 4, 5]) {
-                    const inst = window.GRAPH_INSTANCES ? window.GRAPH_INSTANCES[id] : null;
-                    if (!inst) {
-                        results[id] = { found: false };
-                        continue;
-                    }
+                const keys = Object.keys(window.GRAPH_INSTANCES || {});
+                for (const id of keys) {
+                    const inst = window.GRAPH_INSTANCES[id];
                     const engine = inst.engine;
                     results[id] = {
                         found: true,
                         nodeCount: engine ? engine.nodes.length : 0,
                         nodeTypes: engine ? engine.nodes.map(n => n.type + ':' + n.label) : [],
-                        subnets: engine ? Array.from(new Set(engine.nodes.map(n => n.subnet))) : [],
-                        zoom: engine && engine.camera ? engine.camera.zoom : null,
                         totalDuration: inst.totalDuration,
                         milestoneCount: inst.milestones ? inst.milestones.length : 0
                     };
