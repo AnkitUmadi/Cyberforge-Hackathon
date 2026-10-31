@@ -18,20 +18,27 @@ sql: |
     process_name as extra
   FROM events
   WHERE event_type = 'ips_alert' 
-    AND (
-      -- Root stem semantic matching (catches all current and future exploits)
-      process_name LIKE '%.Overflow%' 
-      OR process_name LIKE '%.Traversal%' 
-      OR process_name LIKE '%.Injection%' 
-      OR process_name LIKE '%.Execution%' 
-      OR process_name LIKE '%.RCE%'
-      OR process_name LIKE '%.Handling%'
-      OR process_name LIKE '%.Deserialization%'
-      OR process_name LIKE '%.Upload%'
-      OR process_name LIKE '%Log4j%'
-      OR process_name LIKE '%SSLVPN%'
-      OR process_name LIKE '%Exploit%'
-      -- Catch-all safety net for any critical IPS event
-      OR details LIKE '%"severity": "critical"%'
+    AND NOT (
+      process_name LIKE '%Mirai%' 
+      OR process_name LIKE '%Cobalt%' 
+      OR process_name LIKE '%Beacon%' 
+      OR process_name LIKE '%Botnet%' 
+      OR process_name LIKE '%Backdoor%' 
+      OR process_name LIKE '%C2%'
+      OR process_name LIKE '%ZeroLogon%' 
+      OR process_name LIKE '%.Escalat%' 
+      OR process_name LIKE '%Privilege%' 
+      OR process_name LIKE '%Elevat%'
+      OR process_name LIKE '%Password%' 
+      OR process_name LIKE '%dump%' 
+      OR process_name LIKE '%mimikatz%' 
+      OR process_name LIKE '%Credential%'
+      OR process_name LIKE '%Zone.Transfer%' 
+      OR process_name LIKE '%Information.Disclosure%' 
+      OR process_name LIKE '%Scan%' 
+      OR process_name LIKE '%Discovery%' 
+      OR process_name LIKE '%Enumerat%'
+      OR process_name LIKE '%Brute.Force%' 
+      OR process_name LIKE '%Brute%'
     )
   GROUP BY src_ip, dest_ip, process_name
