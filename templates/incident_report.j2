@@ -354,6 +354,38 @@
         </div>
     </div>
 
+    <!-- Executive Threat Rankings & Jump Bar -->
+    <div style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; padding: 18px 24px; margin-bottom: 25px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+            <div style="font-size: 0.95rem; font-weight: 700; color: #fff;">
+                Ranked Threat Index &bull; Top Incidents by Risk Score
+            </div>
+            <div style="font-size: 0.8rem; color: var(--text-muted);">
+                Click any card to jump directly to its attack graph &amp; timeline
+            </div>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px;">
+            {% for inc in top_incidents %}
+            <a href="#incident-{{ inc.incident_id }}" style="text-decoration: none; color: inherit;">
+                <div style="background: #090e17; border: 1px solid {% if inc.risk_score >= 90 %}#ef444466{% else %}#f59e0b66{% endif %}; border-radius: 6px; padding: 12px 14px; transition: border-color 0.2s; cursor: pointer;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-weight: 800; color: #fff; font-size: 0.9rem;">#{{ loop.index }} Incident #{{ inc.incident_id }}</span>
+                        <span style="font-weight: 800; font-size: 0.95rem; color: {% if inc.risk_score >= 90 %}var(--accent-red){% else %}var(--accent-amber){% endif %};">
+                            {{ inc.risk_score }} / 100
+                        </span>
+                    </div>
+                    <div style="font-family: monospace; font-size: 0.82rem; color: var(--accent-cyan); margin-top: 4px;">
+                        {{ inc.root_entity }}
+                    </div>
+                    <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px;">
+                        {{ inc.alert_count }} alerts &bull; {{ inc.stages_covered.split(',') | length }} stages
+                    </div>
+                </div>
+            </a>
+            {% endfor %}
+        </div>
+    </div>
+
     <!-- Top Correlated Incidents Dossiers -->
     {% for inc in top_incidents %}
     <div class="incident-dossier" id="incident-{{ inc.incident_id }}">
