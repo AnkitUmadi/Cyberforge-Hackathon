@@ -6,6 +6,7 @@ import networkx as nx
 from collections import defaultdict
 from typing import Dict, List, Any
 from ..db import get_connection
+from .scoring import calculate_risk_score, get_risk_level
 
 class CorrelationEngine:
     """
@@ -116,6 +117,7 @@ class CorrelationEngine:
             incident_id BIGINT,
             title VARCHAR,
             severity VARCHAR,
+            risk_score INTEGER,
             root_entity VARCHAR,
             adversary_ip VARCHAR,
             usr VARCHAR,
@@ -230,6 +232,9 @@ class CorrelationEngine:
                 # Lookahead blast radius
                 blast_radius = self.compute_blast_radius(host)
 
+                # Mathematical Risk Score calculation (0 - 100)
+                risk_score = calculate_risk_score(stages, severity, host, blast_radius)
+
                 candidate_incidents.append({
                     "host": host,
                     "usr": usr_label,
@@ -241,16 +246,17 @@ class CorrelationEngine:
                     "ts_end": ts_end,
                     "duration_minutes": duration_mins,
                     "severity": severity,
+                    "risk_score": risk_score,
                     "path_summary": path_summary,
                     "blast_radius": blast_radius
                 })
 
-        # Rank incidents: Highest stages and highest alert volume first
-        candidate_incidents.sort(key=lambda x: (len(x["stages"]), len(x["alerts"])), reverse=True)
+        # Rank incidents: Highest Risk Score, highest stages, and highest alert volume first
+        candidate_incidents.sort(key=lambda x: (x["risk_score"], len(x["stages"]), len(x["alerts"])), reverse=True)
 
         # PyArrow ultra-fast batch streaming insert
-        inc_ids, titles, sevs, roots, advs, usrs, targets, ts_starts, ts_ends, durations, cnts, stages_strs, summaries, lookaheads = (
-            [], [], [], [], [], [], [], [], [], [], [], [], [], []
+        inc_ids, titles, sevs, risk_scores, roots, advs, usrs, targets, ts_starts, ts_ends, durations, cnts, stages_strs, summaries, lookaheads = (
+            [], [], [], [], [], [], [], [], [], [], [], [], [], [], []
         )
         ia_inc_ids, ia_alert_ids, ia_hop_orders = [], [], []
 
@@ -258,7 +264,7 @@ class CorrelationEngine:
         saved_incidents = []
 
         for inc in candidate_incidents:
-            title = f"{inc['severity']} Intrusion Campaign on {inc['host']} ({len(inc['stages'])} Stages, {inc['duration_minutes']} min)"
+            title = f"{inc['severity']} Intrusion Campaign on {inc['host']} (Risk: {inc['risk_score']}/100, {len(inc['stages'])} Stages)"
             stages_str = ", ".join(inc["stages"])
             lookahead_json = json.dumps(inc["blast_radius"])
             target = inc["blast_radius"]["hop2_critical_assets_exposed"][0]["asset"] if inc["blast_radius"]["hop2_critical_assets_exposed"] else "External Exfiltration"
@@ -266,6 +272,7 @@ class CorrelationEngine:
             inc_ids.append(incident_id)
             titles.append(title)
             sevs.append(inc["severity"])
+            risk_scores.append(inc["risk_score"])
             roots.append(inc["host"])
             advs.append(inc["adversary_ip"])
             usrs.append(inc["usr"])
@@ -294,6 +301,7 @@ class CorrelationEngine:
                 ('incident_id', pa.int64()),
                 ('title', pa.string()),
                 ('severity', pa.string()),
+                ('risk_score', pa.int32()),
                 ('root_entity', pa.string()),
                 ('adversary_ip', pa.string()),
                 ('usr', pa.string()),
@@ -310,6 +318,7 @@ class CorrelationEngine:
                 pa.array(inc_ids, type=pa.int64()),
                 pa.array(titles, type=pa.string()),
                 pa.array(sevs, type=pa.string()),
+                pa.array(risk_scores, type=pa.int32()),
                 pa.array(roots, type=pa.string()),
                 pa.array(advs, type=pa.string()),
                 pa.array(usrs, type=pa.string()),
@@ -327,7 +336,7 @@ class CorrelationEngine:
             self.conn.execute("""
                 INSERT INTO incidents 
                 SELECT 
-                    incident_id, title, severity, root_entity, adversary_ip, usr, target_entity,
+                    incident_id, title, severity, risk_score, root_entity, adversary_ip, usr, target_entity,
                     ts_start::TIMESTAMP, ts_end::TIMESTAMP, duration_minutes, alert_count,
                     stages_covered, path_summary, lookahead_2hop
                 FROM inc_tbl_temp;
@@ -354,12 +363,12 @@ class CorrelationEngine:
 
         # Print Executive Summary
         print(f"\nSuccessfully Correlated {len(saved_incidents):,} Multi-Stage 4D Incidents in {total_duration:.2f}s")
-        print("-" * 75)
-        print(f"{'ID':<6} {'SEVERITY':<10} {'TARGET HOST':<16} {'USER':<12} {'ADVERSARY IP':<16} {'STAGES':<8} {'DUR(m)'}")
-        print("-" * 75)
+        print("-" * 85)
+        print(f"{'ID':<5} {'RISK':<8} {'SEVERITY':<10} {'TARGET HOST':<16} {'USER':<12} {'ADVERSARY IP':<16} {'STAGES':<8} {'DUR(m)'}")
+        print("-" * 85)
         for inc in saved_incidents[:10]:
-            print(f"#{inc['incident_id']:<5} {inc['severity']:<10} {inc['host']:<16} {inc['usr'][:10]:<12} {inc['adversary_ip']:<16} {len(inc['stages']):<8} {inc['duration_minutes']:<6}")
-        print("=" * 75)
+            print(f"#{inc['incident_id']:<4} {inc['risk_score']:<8} {inc['severity']:<10} {inc['host']:<16} {inc['usr'][:10]:<12} {inc['adversary_ip']:<16} {len(inc['stages']):<8} {inc['duration_minutes']:<6}")
+        print("=" * 85)
 
         return saved_incidents
 

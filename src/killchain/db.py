@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS incidents (
     incident_id BIGINT,
     title VARCHAR,
     severity VARCHAR,
+    risk_score INTEGER,
     root_entity VARCHAR,
     adversary_ip VARCHAR,
     usr VARCHAR,
