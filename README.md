@@ -32,10 +32,23 @@
    * **What is at risk?** (2-hop blast radius exposing Domain Controller `10.10.99.1`)
    * **What immediate action to take?** (Firewall drop, host isolation, password reset)
 
-3. **Interactive Neo4j-Style Canvas Graph:**
-   Pure HTML5 Canvas force-directed graph with spring physics, node drag & pin, directional arrows, relationship pills (`[:EXPLOITS]`, `[:CRED_THEFT]`, `[:EXFIL_C2]`, `[:BLAST_VECTOR]`), and live Entity Inspector.
+3. **Temporal Attack-Path Scrubber & Stochastic Cascade Engine:**
+   - **Interactive Time Scrubber ($t \in [0, 440\text{ min}]$):** Replays a 7-hour campaign in ~30 seconds (~15 min/sec).
+   - **Three-State Encoding:**
+     - `CONFIRMED (t <= t_now)`: Solid fill, stage color, permanent ring.
+     - `ACTIVE (last event within window)`: White-hot core, expanding ripples (`exp(-age/6)`), traveling edge particles.
+     - `PROJECTED (t > t_now)`: Hollow dashed outline, marching-ants ghost edge, labeled with probability ($P=0.68$) and ETA ($+16\text{m}$).
+   - **Continuous-Time Cascade Monte Carlo (2,000 trials in browser):** Estimates dynamic reachability probabilities in real-time.
+   - **Time-to-Domain-Compromise (TTDC):** Erlang($k=2, \lambda$) distribution (Median $16.4\text{m}$, 80% interval $5.2\text{m}$ to $38.1\text{m}$).
+   - **Containment What-If Compounding Proof:** Demonstrates that dwell time scales non-linearly: delaying containment from 30 min to 120 min increases Domain Controller exposure probability by 10x!
 
-4. **Predictive 2-Hop Lookahead in < 1 ms:**
+4. **The 60-Second Mentor Pitch:**
+   > *"Most tools show you where an attacker has been. We show you where they are going, and how fast.*  
+   > *This is a seven-hour campaign from 15 GB of Fortinet perimeter logs, replayed on an interactive timeline. Solid nodes are confirmed compromise. The pulsing node is the attacker right now. The dashed ghosts are our stochastic cascade forecast, each with a probability and an ETA.*  
+   > *Three numbers matter: **Velocity** (1 hop every 9.8 minutes, with intervals shrinking as the attacker accelerates); **Time-to-Domain-Compromise** (median 16.4 minutes); and the **Cost of Delay**: we simulated containing this breach at 30, 60, 120, and 240 minutes. The blast radius compounds because every stolen credential unlocks new lateral paths until saturating the reachable estate.*  
+   > *The SOC director's question isn't 'what happened.' It's 'if I act in the next twenty minutes, how many assets do I save?' We answer that, from out-of-core DuckDB, directly in your browser."*
+
+5. **Predictive 2-Hop Lookahead in < 1 ms:**
    Calculates Hop-1 subnet broadcast peers (253 hosts) and Hop-2 high-value assets (`10.10.99.1` Domain Controller, `10.10.99.10` Vault) instantly.
 
 ---

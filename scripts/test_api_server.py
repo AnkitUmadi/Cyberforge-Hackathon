@@ -46,6 +46,12 @@ def main():
             data = json.loads(resp.read().decode())
             print(f"[PASS] /api/incidents/1/lookahead -> {resp.status} - Latency: {data['query_latency_ms']} ms ({data['speedup_vs_target']})")
 
+        # Test 5b: Temporal Dynamics & TTDC
+        with urllib.request.urlopen(f"{base_url}/api/incidents/1/temporal") as resp:
+            data = json.loads(resp.read().decode())
+            temp = data['temporal_analysis']
+            print(f"[PASS] /api/incidents/1/temporal -> {resp.status} - Cadence: 1 hop/{temp['cadence_median_min']}m ({temp['cadence_trend']}) | TTDC P50: {temp['ttdc_p50_min']}m")
+
         # Test 6: Graph JSON
         with urllib.request.urlopen(f"{base_url}/api/incidents/1/graph") as resp:
             data = json.loads(resp.read().decode())

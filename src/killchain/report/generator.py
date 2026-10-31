@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import jinja2
 from ..db import get_connection
 from ..correlate.narrative import generate_plain_english_narrative
+from ..correlate.temporal import compute_temporal_dynamics
 
 def generate_report(db_path: str = "out/killchain.duckdb", template_path: str = "templates/incident_report.j2", out_path: str = "out/incident_report.html", top_n: int = 5):
     """
@@ -86,6 +87,7 @@ def generate_report(db_path: str = "out/killchain.duckdb", template_path: str = 
             "timeline_hops": timeline_hops
         }
         inc_dict["narrative"] = generate_plain_english_narrative(inc_dict)
+        inc_dict["temporal"] = compute_temporal_dynamics(timeline_hops, inc[10], blast_radius)
         top_incidents.append(inc_dict)
 
     conn.close()

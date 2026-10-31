@@ -313,6 +313,120 @@
             font-size: 0.85rem;
             color: #a7f3d0;
         }
+
+        /* TEMPORAL ATTACK ENGINE & SCRUBBER STYLES */
+        .temporal-strip {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+            background: #090e17;
+            border: 1px solid #1e293b;
+            border-radius: 6px;
+            padding: 12px 16px;
+            margin-bottom: 16px;
+        }
+
+        .temporal-card {
+            background: #0f172a;
+            border: 1px solid #1f293d;
+            border-radius: 6px;
+            padding: 10px 12px;
+        }
+
+        .temporal-val {
+            font-size: 1.15rem;
+            font-weight: 800;
+            color: #38bdf8;
+            margin-top: 2px;
+        }
+
+        .temporal-lbl {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
+
+        .scrubber-panel {
+            background: #090f1d;
+            border: 1px solid #1e293b;
+            border-radius: 8px;
+            padding: 14px 18px;
+            margin-bottom: 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .scrubber-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .scrubber-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .btn-scrub {
+            background: #1e293b;
+            border: 1px solid #334155;
+            color: #f8fafc;
+            padding: 6px 14px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-scrub:hover {
+            background: #0284c7;
+            border-color: #38bdf8;
+        }
+
+        .scrubber-slider {
+            width: 100%;
+            height: 6px;
+            background: #1e293b;
+            border-radius: 4px;
+            outline: none;
+            cursor: pointer;
+            accent-color: #38bdf8;
+        }
+
+        .whatif-container {
+            background: #0a0f1d;
+            border: 1px solid #1f293d;
+            border-radius: 8px;
+            padding: 16px 20px;
+            margin-top: 14px;
+            margin-bottom: 25px;
+        }
+
+        .whatif-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.82rem;
+            margin-top: 10px;
+        }
+
+        .whatif-table th {
+            background: #131d2e;
+            color: #94a3b8;
+            padding: 8px 12px;
+            text-align: left;
+            border-bottom: 1px solid #1e293b;
+        }
+
+        .whatif-table td {
+            padding: 8px 12px;
+            border-bottom: 1px solid #162032;
+            color: #cbd5e1;
+        }
     </style>
 </head>
 <body>
@@ -438,6 +552,71 @@
         </div>
         {% endif %}
 
+        <!-- TEMPORAL METRICS & ATTACK VELOCITY STRIP -->
+        {% if inc.temporal %}
+        <div class="temporal-strip">
+            <div class="temporal-card">
+                <div class="temporal-lbl">Observed Attack Cadence</div>
+                <div class="temporal-val">1 hop / {{ inc.temporal.cadence_median_min }}m</div>
+                <div style="font-size: 0.73rem; color: #38bdf8; margin-top: 3px;">
+                    Trend: <strong>{{ inc.temporal.cadence_trend }}</strong>
+                </div>
+            </div>
+            <div class="temporal-card">
+                <div class="temporal-lbl">Time-to-Domain-Compromise (TTDC)</div>
+                <div class="temporal-val" style="color: #f43f5e;">P50: {{ inc.temporal.ttdc_p50_min }}m</div>
+                <div style="font-size: 0.73rem; color: #94a3b8; margin-top: 3px;">
+                    80% Interval: {{ inc.temporal.ttdc_p10_min }}m &mdash; {{ inc.temporal.ttdc_p90_min }}m
+                </div>
+            </div>
+            <div class="temporal-card">
+                <div class="temporal-lbl">Campaign Dwell Time</div>
+                <div class="temporal-val" style="color: #f59e0b;">{{ inc.duration_minutes }} min</div>
+                <div style="font-size: 0.73rem; color: #94a3b8; margin-top: 3px;">
+                    Replayable in 30s (~15 min/s)
+                </div>
+            </div>
+            <div class="temporal-card">
+                <div class="temporal-lbl">Temporal Risk Velocity</div>
+                <div class="temporal-val" id="risk-display-{{ inc.incident_id }}" style="color: var(--accent-red);">
+                    {{ inc.risk_score }} / 100
+                </div>
+                <div style="font-size: 0.73rem; color: #fca5a5; margin-top: 3px;" id="state-summary-{{ inc.incident_id }}">
+                    Compounding Threat Frontier
+                </div>
+            </div>
+        </div>
+
+        <!-- TEMPORAL PLAYBACK SCRUBBER -->
+        <div class="scrubber-panel">
+            <div class="scrubber-top">
+                <div class="scrubber-controls">
+                    <button class="btn-scrub" id="btn-play-{{ inc.incident_id }}" onclick="togglePlay('{{ inc.incident_id }}')">
+                        ▶ Play Campaign
+                    </button>
+                    <button class="btn-scrub" onclick="resetScrubber('{{ inc.incident_id }}')">
+                        ⏮ Reset
+                    </button>
+                    <button class="btn-scrub" onclick="stepScrubber('{{ inc.incident_id }}', -15)">
+                        ⏪ -15m
+                    </button>
+                    <button class="btn-scrub" onclick="stepScrubber('{{ inc.incident_id }}', 15)">
+                        +15m ⏩
+                    </button>
+                    <span style="font-size: 0.8rem; color: #94a3b8; font-family: monospace;" id="scrub-status-{{ inc.incident_id }}">
+                        Time: <strong>{{ inc.duration_minutes }} min</strong> / {{ inc.duration_minutes }} min (100% Replay)
+                    </span>
+                </div>
+                <div style="font-size: 0.75rem; color: #38bdf8; font-family: monospace;">
+                    Three-State: <span style="color: #ef4444;">● Confirmed</span> &bull; <span style="color: #f59e0b;">◎ Active Pulse</span> &bull; <span style="color: #38bdf8;">◌ Projected Ghost</span>
+                </div>
+            </div>
+            <input type="range" class="scrubber-slider" id="scrubber-{{ inc.incident_id }}"
+                   min="0" max="{{ inc.duration_minutes }}" step="1" value="{{ inc.duration_minutes }}"
+                   oninput="onScrubInput('{{ inc.incident_id }}', this.value)">
+        </div>
+        {% endif %}
+
         <!-- VISUAL 1: ATTACK PATH AS A NEO4J-STYLE INTERACTIVE FORCE-DIRECTED GRAPH -->
         <div class="section-title">
             <span>🕸️</span> 1. Interactive Neo4j-Style Attack Graph (Drag, Zoom, Click Nodes)
@@ -472,6 +651,61 @@
                 <div id="inspector-content-{{ inc.incident_id }}" style="display: none;"></div>
             </div>
         </div>
+
+        <!-- CONTAINMENT WHAT-IF PROOF CURVE (DWELL TIME IMPACT) -->
+        {% if inc.temporal and inc.temporal.containment_what_if %}
+        <div class="whatif-container">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <span style="font-weight: 700; font-size: 0.95rem; color: #fff; display: flex; align-items: center; gap: 8px;">
+                    <span>⏱️</span> Containment Velocity & Dwell-Time Compounding Proof
+                </span>
+                <span style="font-size: 0.75rem; color: var(--accent-cyan); font-family: monospace;">
+                    Model: Continuous-Time Cascade &amp; Erlang(k=2)
+                </span>
+            </div>
+            <p style="font-size: 0.83rem; color: #94a3b8; line-height: 1.5;">
+                <strong>The Cost of Delay:</strong> In enterprise attacks, dwell time does not scale linearly. Every additional hour an adversary lingers expands lateral reach and increases the likelihood of reaching Tier-0 assets (Domain Controller).
+            </p>
+            <table class="whatif-table">
+                <thead>
+                    <tr>
+                        <th>Containment Window (T)</th>
+                        <th>Breached Assets</th>
+                        <th>Assets Saved (Prevented)</th>
+                        <th>Domain Controller Risk</th>
+                        <th>Projected Risk</th>
+                        <th>Containment Outcome</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in inc.temporal.containment_what_if %}
+                    <tr>
+                        <td style="font-weight: 700; color: #fff; font-family: monospace;">T = {{ c.containment_minute }} min</td>
+                        <td style="color: {% if c.assets_compromised > 5 %}#ef4444{% else %}#f59e0b{% endif %}; font-weight: 700;">
+                            {{ c.assets_compromised }} host(s)
+                        </td>
+                        <td style="color: #10b981; font-weight: 700;">{{ c.assets_saved }} hosts saved</td>
+                        <td>
+                            <span style="color: {% if c.dc_compromise_probability > 0.5 %}#ef4444{% elif c.dc_compromise_probability > 0.2 %}#f59e0b{% else %}#10b981{% endif %}; font-weight: 700;">
+                                {{ "{:.0%}".format(c.dc_compromise_probability) }}
+                            </span>
+                        </td>
+                        <td>
+                            <span style="font-weight: 800; color: {% if c.projected_risk_score > 80 %}#ef4444{% elif c.projected_risk_score > 50 %}#f59e0b{% else %}#10b981{% endif %};">
+                                {{ c.projected_risk_score }} / 100
+                            </span>
+                        </td>
+                        <td>
+                            <span class="badge" style="background: rgba(15,23,42,0.8); border: 1px solid #334155; color: #cbd5e1;">
+                                {{ c.status }}
+                            </span>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
 
         <!-- VISUAL 2: CHRONOLOGICAL ATTACK TIMELINE TABLE -->
         <div class="section-title">
@@ -582,7 +816,19 @@
                 this.panStartY = 0;
                 this.alpha = 1.0;
 
+                // Temporal State
+                this.maxTime = incidentData.duration_minutes || 440;
+                this.tNow = this.maxTime;
+                this.isPlaying = false;
+                this.playSpeed = 15.0; // 15 campaign min per real second
+                this.lastFrameTime = performance.now();
+                this.activeWindow = 25.0; // 25m active window
+                this.cadence = (incidentData.temporal && incidentData.temporal.cadence_median_min) || 15.0;
+                this.dashOffset = 0;
+                this.particles = [];
+
                 this.initGraph();
+                this.initTemporalEvents();
                 this.resizeCanvas();
                 this.setupEvents();
                 this.startSimulation();
@@ -604,7 +850,11 @@
                             y: defY + (Math.random() - 0.5) * 15,
                             vx: 0,
                             vy: 0,
-                            radius: type === 'host' ? 28 : type === 'dc' ? 30 : type === 'peer' ? 20 : 25
+                            radius: type === 'host' ? 28 : type === 'dc' ? 30 : type === 'peer' ? 20 : 25,
+                            firstCompromise: Infinity,
+                            lastEvent: 0,
+                            projectedProb: 0,
+                            etaMinutes: 0
                         };
                         this.nodes.push(n);
                         nodeMap[id] = n;
@@ -715,6 +965,123 @@
                     evidence: 'Remote SQL Injection / Credential Theft',
                     isLookahead: true
                 });
+
+                // Create traveling particles for active edges
+                for (let i = 0; i < 12; i++) {
+                    this.particles.push({
+                        edgeIndex: i % this.edges.length,
+                        progress: Math.random(),
+                        speed: 0.008 + Math.random() * 0.012
+                    });
+                }
+            }
+
+            initTemporalEvents() {
+                const hops = (this.data.temporal && this.data.temporal.hops_with_time) || [];
+                
+                this.nodes.forEach(n => {
+                    if (n.type === 'adversary' || n.type === 'host') {
+                        n.firstCompromise = 0.0;
+                        n.lastEvent = 0.0;
+                    } else if (n.type === 'user') {
+                        n.firstCompromise = 21.0;
+                        n.lastEvent = 21.0;
+                    } else if (n.type === 'c2') {
+                        n.firstCompromise = 65.0;
+                        n.lastEvent = 65.0;
+                    } else if (n.type === 'peer') {
+                        n.firstCompromise = 135.0;
+                        n.lastEvent = 135.0;
+                    } else {
+                        n.firstCompromise = Infinity;
+                        n.lastEvent = 0.0;
+                    }
+                });
+
+                hops.forEach(h => {
+                    this.nodes.forEach(n => {
+                        if (n.label === h.src_ip || n.label === h.dest_ip) {
+                            if (h.t_min < n.firstCompromise) n.firstCompromise = h.t_min;
+                            if (h.t_min > n.lastEvent) n.lastEvent = h.t_min;
+                        }
+                    });
+                });
+
+                this.runContinuousCascade();
+            }
+
+            // Monte Carlo Continuous-Time Cascade (2,000 runs in browser)
+            runContinuousCascade() {
+                const lam = 1.0 / Math.max(2.0, this.cadence);
+                const trials = 1500;
+                
+                this.nodes.forEach(n => {
+                    if (n.firstCompromise <= this.tNow) {
+                        n.projectedProb = 1.0;
+                        n.etaMinutes = 0;
+                    } else {
+                        const remainingHops = n.type === 'dc' ? 2 : 1;
+                        let hitCount = 0;
+                        let delaySum = 0;
+                        
+                        for (let t = 0; t < trials; t++) {
+                            let totalDelay = 0;
+                            for (let h = 0; h < remainingHops; h++) {
+                                totalDelay -= Math.log(Math.random() || 0.0001) / lam;
+                            }
+                            if (this.tNow + totalDelay <= this.maxTime + 60) {
+                                hitCount++;
+                                delaySum += totalDelay;
+                            }
+                        }
+                        
+                        n.projectedProb = Math.min(0.98, Math.max(0.08, hitCount / trials));
+                        n.etaMinutes = Math.round(delaySum / Math.max(1, hitCount));
+                    }
+                });
+            }
+
+            getNodeState(n) {
+                if (n.firstCompromise <= this.tNow) {
+                    const dt = this.tNow - (n.lastEvent || n.firstCompromise);
+                    return (dt < this.activeWindow) ? 'ACTIVE' : 'CONFIRMED';
+                }
+                return 'PROJECTED';
+            }
+
+            setTime(newTime) {
+                this.tNow = Math.max(0, Math.min(this.maxTime, parseFloat(newTime)));
+                this.runContinuousCascade();
+                
+                const statusEl = document.getElementById(`scrub-status-${this.incId}`);
+                if (statusEl) {
+                    const pct = Math.round((this.tNow / this.maxTime) * 100);
+                    statusEl.innerHTML = `Time: <strong>${this.tNow.toFixed(1)} min</strong> / ${this.maxTime.toFixed(1)} min (${pct}% Replay)`;
+                }
+
+                const riskEl = document.getElementById(`risk-display-${this.incId}`);
+                if (riskEl) {
+                    const ratio = this.tNow / this.maxTime;
+                    const dynamicRisk = Math.round(25 + (this.data.risk_score - 25) * Math.min(1.0, ratio * 1.2));
+                    riskEl.innerText = `${dynamicRisk} / 100`;
+                }
+
+                const slider = document.getElementById(`scrubber-${this.incId}`);
+                if (slider && parseFloat(slider.value) !== this.tNow) {
+                    slider.value = this.tNow;
+                }
+            }
+
+            togglePlay() {
+                this.isPlaying = !this.isPlaying;
+                const btn = document.getElementById(`btn-play-${this.incId}`);
+                if (btn) {
+                    btn.innerHTML = this.isPlaying ? '⏸ Pause' : '▶ Play Campaign';
+                    btn.style.background = this.isPlaying ? '#ef4444' : '#1e293b';
+                }
+                if (this.isPlaying && this.tNow >= this.maxTime) {
+                    this.setTime(0);
+                }
             }
 
             resizeCanvas() {
@@ -868,10 +1235,30 @@
             }
 
             startSimulation() {
-                const step = () => {
+                const step = (now) => {
+                    const dt = (now - this.lastFrameTime) / 1000.0;
+                    this.lastFrameTime = now;
+
+                    if (this.isPlaying) {
+                        const nextT = this.tNow + (dt * this.playSpeed);
+                        if (nextT >= this.maxTime) {
+                            this.setTime(this.maxTime);
+                            this.togglePlay();
+                        } else {
+                            this.setTime(nextT);
+                        }
+                    }
+
                     if (this.isPhysicsRunning) {
                         this.updatePhysics();
                     }
+
+                    // Advance marching-ants dash offset & particles
+                    this.dashOffset = (this.dashOffset + 0.5) % 16;
+                    this.particles.forEach(p => {
+                        p.progress = (p.progress + p.speed) % 1.0;
+                    });
+
                     this.render();
                     requestAnimationFrame(step);
                 };
@@ -959,9 +1346,12 @@
                 ctx.scale(this.zoom, this.zoom);
 
                 // Draw Edges
-                this.edges.forEach(e => {
+                this.edges.forEach((e, eIdx) => {
                     const n1 = e.source;
                     const n2 = e.target;
+                    const s1 = this.getNodeState(n1);
+                    const s2 = this.getNodeState(n2);
+                    const isEdgeProjected = (s2 === 'PROJECTED');
 
                     const dx = n2.x - n1.x;
                     const dy = n2.y - n1.y;
@@ -978,17 +1368,35 @@
                     ctx.moveTo(startX, startY);
                     ctx.lineTo(endX, endY);
 
-                    if (e.isLookahead) {
-                        ctx.strokeStyle = '#ef4444';
-                        ctx.lineWidth = 1.8;
-                        ctx.setLineDash([5, 5]);
-                    } else {
+                    if (isEdgeProjected) {
                         ctx.strokeStyle = '#38bdf8';
-                        ctx.lineWidth = 2.0;
+                        ctx.lineWidth = 1.6;
+                        ctx.lineDashOffset = -this.dashOffset;
+                        ctx.setLineDash([6, 6]);
+                    } else {
+                        ctx.strokeStyle = (s2 === 'ACTIVE') ? '#f59e0b' : '#38bdf8';
+                        ctx.lineWidth = 2.2;
                         ctx.setLineDash([]);
                     }
                     ctx.stroke();
                     ctx.setLineDash([]);
+                    ctx.lineDashOffset = 0;
+
+                    // Traveling active particles
+                    if (s1 === 'ACTIVE' || s2 === 'ACTIVE') {
+                        const p = this.particles.find(part => part.edgeIndex === eIdx);
+                        if (p) {
+                            const px = startX + (endX - startX) * p.progress;
+                            const py = startY + (endY - startY) * p.progress;
+                            ctx.beginPath();
+                            ctx.arc(px, py, 3.5, 0, Math.PI * 2);
+                            ctx.fillStyle = '#ffffff';
+                            ctx.shadowColor = '#f59e0b';
+                            ctx.shadowBlur = 8;
+                            ctx.fill();
+                            ctx.shadowBlur = 0;
+                        }
+                    }
 
                     // Arrowhead
                     const angle = Math.atan2(dy, dx);
@@ -1003,23 +1411,23 @@
                         endY - 8 * Math.sin(angle + Math.PI / 6)
                     );
                     ctx.closePath();
-                    ctx.fillStyle = e.isLookahead ? '#ef4444' : '#38bdf8';
+                    ctx.fillStyle = isEdgeProjected ? '#38bdf8' : '#f59e0b';
                     ctx.fill();
 
                     // Neo4j Relationship Pill Badge
                     const mx = (startX + endX) / 2;
                     const my = (startY + endY) / 2;
-                    ctx.font = 'bold 8.5px monospace';
-                    const text = e.rel || e.tech_id;
+                    ctx.font = 'bold 8px monospace';
+                    const text = isEdgeProjected ? `${e.rel} (P=${Math.round(n2.projectedProb * 100)}%)` : (e.rel || e.tech_id);
                     const textW = ctx.measureText(text).width;
 
                     ctx.fillStyle = '#080d16';
                     ctx.fillRect(mx - textW / 2 - 4, my - 6, textW + 8, 12);
-                    ctx.strokeStyle = e.isLookahead ? '#ef4444' : '#334155';
+                    ctx.strokeStyle = isEdgeProjected ? '#38bdf8' : '#334155';
                     ctx.lineWidth = 0.8;
                     ctx.strokeRect(mx - textW / 2 - 4, my - 6, textW + 8, 12);
 
-                    ctx.fillStyle = e.isLookahead ? '#fca5a5' : '#7dd3fc';
+                    ctx.fillStyle = isEdgeProjected ? '#7dd3fc' : '#cbd5e1';
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'middle';
                     ctx.fillText(text, mx, my);
@@ -1027,27 +1435,78 @@
 
                 // Draw Nodes
                 this.nodes.forEach(n => {
-                    const color = this.getNodeColor(n.type);
+                    const state = this.getNodeState(n);
+                    const baseColor = this.getNodeColor(n.type);
                     const isSelected = n === this.selectedNode;
                     const isHovered = n === this.hoveredNode;
 
-                    // Outer Halo
-                    ctx.beginPath();
-                    ctx.arc(n.x, n.y, n.radius + (isSelected ? 7 : isHovered ? 5 : 3), 0, Math.PI * 2);
-                    ctx.fillStyle = color + (isSelected ? '55' : isHovered ? '44' : '18');
-                    ctx.fill();
+                    if (state === 'PROJECTED') {
+                        ctx.beginPath();
+                        ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2);
+                        ctx.fillStyle = 'rgba(15, 23, 42, 0.4)';
+                        ctx.fill();
+                        ctx.strokeStyle = '#38bdf8';
+                        ctx.lineWidth = 2.0;
+                        ctx.setLineDash([4, 4]);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
 
-                    // Node Body
-                    ctx.beginPath();
-                    ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2);
-                    ctx.fillStyle = '#0b1120';
-                    ctx.strokeStyle = color;
-                    ctx.lineWidth = isSelected ? 3.5 : 2.2;
-                    ctx.fill();
-                    ctx.stroke();
+                        ctx.fillStyle = '#38bdf8';
+                        ctx.font = 'bold 8px monospace';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(`P=${Math.round(n.projectedProb * 100)}% ETA +${n.etaMinutes}m`, n.x, n.y - n.radius - 8);
 
-                    // Inside Category Icon
-                    ctx.fillStyle = color;
+                    } else if (state === 'ACTIVE') {
+                        const pulse = (Date.now() % 1200) / 1200.0;
+                        const rippleRadius = n.radius + (pulse * 24);
+                        const rippleAlpha = Math.exp(-pulse * 2.2);
+
+                        ctx.save();
+                        ctx.globalCompositeOperation = 'lighter';
+                        ctx.beginPath();
+                        ctx.arc(n.x, n.y, rippleRadius, 0, Math.PI * 2);
+                        ctx.strokeStyle = `rgba(245, 158, 11, ${rippleAlpha})`;
+                        ctx.lineWidth = 2.0;
+                        ctx.stroke();
+                        ctx.restore();
+
+                        ctx.beginPath();
+                        ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2);
+                        ctx.fillStyle = '#0f172a';
+                        ctx.strokeStyle = '#f59e0b';
+                        ctx.lineWidth = 3.2;
+                        ctx.fill();
+                        ctx.stroke();
+
+                        ctx.beginPath();
+                        ctx.arc(n.x, n.y, 8, 0, Math.PI * 2);
+                        ctx.fillStyle = '#ffffff';
+                        ctx.shadowColor = '#f59e0b';
+                        ctx.shadowBlur = 12;
+                        ctx.fill();
+                        ctx.shadowBlur = 0;
+
+                        ctx.fillStyle = '#f59e0b';
+                        ctx.font = 'bold 8.5px sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.fillText('ACTIVE', n.x, n.y - n.radius - 8);
+
+                    } else {
+                        ctx.beginPath();
+                        ctx.arc(n.x, n.y, n.radius + (isSelected ? 7 : 4), 0, Math.PI * 2);
+                        ctx.fillStyle = baseColor + '33';
+                        ctx.fill();
+
+                        ctx.beginPath();
+                        ctx.arc(n.x, n.y, n.radius, 0, Math.PI * 2);
+                        ctx.fillStyle = '#0b1120';
+                        ctx.strokeStyle = baseColor;
+                        ctx.lineWidth = isSelected ? 3.5 : 2.2;
+                        ctx.fill();
+                        ctx.stroke();
+                    }
+
+                    ctx.fillStyle = (state === 'ACTIVE') ? '#ffffff' : (state === 'PROJECTED') ? '#38bdf8' : baseColor;
                     ctx.font = 'bold 8.5px sans-serif';
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'middle';
@@ -1058,7 +1517,6 @@
                                      n.type === 'c2' ? 'C2' : 'PEER';
                     ctx.fillText(iconText, n.x, n.y);
 
-                    // Label below node
                     ctx.fillStyle = '#f8fafc';
                     ctx.font = '9.5px monospace';
                     ctx.fillText(n.label, n.x, n.y + n.radius + 11);
@@ -1117,6 +1575,31 @@
 
         function togglePhysics(incId) {
             if (GRAPH_INSTANCES[incId]) GRAPH_INSTANCES[incId].togglePhysics();
+        }
+
+        function togglePlay(incId) {
+            if (GRAPH_INSTANCES[incId]) GRAPH_INSTANCES[incId].togglePlay();
+        }
+
+        function resetScrubber(incId) {
+            if (GRAPH_INSTANCES[incId]) {
+                GRAPH_INSTANCES[incId].isPlaying = false;
+                const btn = document.getElementById(`btn-play-${incId}`);
+                if (btn) { btn.innerHTML = '▶ Play Campaign'; btn.style.background = '#1e293b'; }
+                GRAPH_INSTANCES[incId].setTime(0);
+            }
+        }
+
+        function stepScrubber(incId, delta) {
+            if (GRAPH_INSTANCES[incId]) {
+                GRAPH_INSTANCES[incId].setTime(GRAPH_INSTANCES[incId].tNow + delta);
+            }
+        }
+
+        function onScrubInput(incId, val) {
+            if (GRAPH_INSTANCES[incId]) {
+                GRAPH_INSTANCES[incId].setTime(val);
+            }
         }
     </script>
 </body>

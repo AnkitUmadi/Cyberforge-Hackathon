@@ -13,6 +13,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from .db import get_connection
 from .correlate.narrative import generate_plain_english_narrative
+from .correlate.temporal import compute_temporal_dynamics
 from .report.generator import generate_report
 
 app = FastAPI(
@@ -287,6 +288,7 @@ def get_incident_detail(incident_id: int):
         }
         
         inc_data["plain_english_report"] = generate_plain_english_narrative(inc_data)
+        inc_data["temporal_analysis"] = compute_temporal_dynamics(timeline_hops, row[10], blast)
         return inc_data
     finally:
         conn.close()
@@ -440,6 +442,58 @@ def get_predictive_lookahead(incident_id: int):
                 "critical_assets_exposed": blast.get("hop2_critical_assets_exposed", []),
                 "mechanism": "Internal Subnet Routing & Kerberos Delegation"
             }
+        }
+    finally:
+        conn.close()
+
+@app.get("/api/incidents/{incident_id}/temporal", tags=["Temporal Dynamics & TTDC"])
+def get_temporal_analysis(incident_id: int):
+    """
+    Returns empirical hop cadence, acceleration slope, Erlang TTDC quantiles (P10/P50/P90),
+    and compounding dwell-time containment what-if curves.
+    """
+    ensure_db()
+    conn = get_connection(DB_PATH)
+    try:
+        row = conn.execute("""
+            SELECT duration_minutes, lookahead_2hop
+            FROM incidents
+            WHERE incident_id = ?;
+        """, [incident_id]).fetchone()
+        
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Incident #{incident_id} not found.")
+            
+        dur = row[0]
+        blast = json.loads(row[1]) if row[1] else {}
+        
+        hop_rows = conn.execute("""
+            SELECT 
+                ia.hop_order, a.ts_start, a.stage, a.technique_name,
+                a.technique_id, a.src_ip, a.dest_ip, a.extra
+            FROM incident_alerts ia
+            JOIN alerts a ON ia.alert_id = a.alert_id
+            WHERE ia.incident_id = ?
+            ORDER BY ia.hop_order ASC;
+        """, [incident_id]).fetchall()
+        
+        timeline_hops = []
+        for h in hop_rows:
+            timeline_hops.append({
+                "order": h[0],
+                "timestamp": str(h[1]),
+                "stage": h[2],
+                "tech_name": h[3],
+                "tech_id": h[4],
+                "src_ip": h[5],
+                "dest_ip": h[6],
+                "evidence": h[7] or "Direct signature hit"
+            })
+            
+        temporal_data = compute_temporal_dynamics(timeline_hops, dur, blast)
+        return {
+            "incident_id": incident_id,
+            "temporal_analysis": temporal_data
         }
     finally:
         conn.close()
