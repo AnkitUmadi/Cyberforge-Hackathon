@@ -88,7 +88,7 @@ def normalize_log_record(raw: Dict[str, str], file_idx: int, row_idx: int) -> Di
         'details': details
     }
 
-def ingest_file(file_path: str, conn, file_idx: int = 0, batch_size: int = 50000):
+def ingest_file(file_path: str, conn, file_idx: int = 0, batch_size: int = 100000):
     print(f"Ingesting {file_path} (File index {file_idx})...")
     start_time = time.time()
     

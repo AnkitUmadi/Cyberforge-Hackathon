@@ -67,7 +67,9 @@ CREATE TABLE IF NOT EXISTS incident_alerts (
 );
 """
 
-def get_connection(db_path: str, memory_limit: str = "4GB", threads: int = 4, temp_dir: str = None):
+def get_connection(db_path: str, memory_limit: str = "12GB", threads: int = None, temp_dir: str = "out/tmp_duckdb"):
+    if threads is None:
+        threads = os.cpu_count() or 12
     conn = duckdb.connect(db_path)
     conn.execute(f"SET memory_limit='{memory_limit}';")
     conn.execute(f"SET threads={threads};")
