@@ -529,8 +529,8 @@ def generate_visualizer(db_path: str = "out/killchain.duckdb", out_path: str = "
     # Fetch top incidents with their correlated alerts
     incidents = conn.execute(f"""
         SELECT 
-            incident_id, title, severity, root_entity, target_entity,
-            ts_start, ts_end, alert_count, stages_covered, path_summary, lookahead_2hop
+            incident_id, title, severity, root_entity, adversary_ip, usr, target_entity,
+            ts_start, ts_end, duration_minutes, alert_count, stages_covered, path_summary, lookahead_2hop
         FROM incidents
         ORDER BY alert_count DESC, incident_id ASC
         LIMIT {top_n}
@@ -560,19 +560,22 @@ def generate_visualizer(db_path: str = "out/killchain.duckdb", out_path: str = "
                 alt[11], alt[12], alt[13]
             ])
 
-        stages = [s.strip() for s in inc[8].split(",") if s.strip()]
-        blast_radius = json.loads(inc[10]) if inc[10] else {}
+        stages = [s.strip() for s in inc[11].split(",") if s.strip()]
+        blast_radius = json.loads(inc[13]) if inc[13] else {}
 
         incidents_data.append({
             "incident_id": inc[0],
             "title": inc[1],
             "severity": inc[2],
             "host": inc[3],
-            "target": inc[4],
-            "ts_start": str(inc[5]),
-            "ts_end": str(inc[6]),
+            "adversary_ip": inc[4],
+            "usr": inc[5],
+            "target": inc[6],
+            "ts_start": str(inc[7]),
+            "ts_end": str(inc[8]),
+            "duration_minutes": inc[9],
             "stages": stages,
-            "path_summary": inc[9],
+            "path_summary": inc[12],
             "blast_radius": blast_radius,
             "alerts": formatted_alerts
         })
