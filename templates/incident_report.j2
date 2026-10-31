@@ -519,6 +519,7 @@
                 this.isPanning = false;
                 this.panStartX = 0;
                 this.panStartY = 0;
+                this.alpha = 1.0;
 
                 this.initGraph();
                 this.resizeCanvas();
@@ -530,7 +531,7 @@
                 const inc = this.data;
                 const nodeMap = {};
 
-                const addNode = (id, label, type, role, criticality) => {
+                const addNode = (id, label, type, role, criticality, defX = 0, defY = 0) => {
                     if (!nodeMap[id]) {
                         const n = {
                             id: id,
@@ -538,8 +539,8 @@
                             type: type,
                             role: role,
                             criticality: criticality,
-                            x: (Math.random() - 0.5) * 360,
-                            y: (Math.random() - 0.5) * 240,
+                            x: defX + (Math.random() - 0.5) * 15,
+                            y: defY + (Math.random() - 0.5) * 15,
                             vx: 0,
                             vy: 0,
                             radius: type === 'host' ? 28 : type === 'dc' ? 30 : type === 'peer' ? 20 : 25
@@ -550,21 +551,21 @@
                     return nodeMap[id];
                 };
 
-                // 1. External Threat Actor (Adversary)
-                const nAdv = addNode(inc.adversary_ip, inc.adversary_ip, 'adversary', 'External Adversary IP', 'CRITICAL');
+                // 1. External Threat Actor (Adversary - Left Ingress)
+                const nAdv = addNode(inc.adversary_ip, inc.adversary_ip, 'adversary', 'External Adversary IP', 'CRITICAL', -190, 0);
 
-                // 2. Compromised Root Host (DMZ Server)
-                const nHost = addNode(inc.root_entity, inc.root_entity, 'host', 'Compromised DMZ Server', 'HIGH (Direct Foothold)');
+                // 2. Compromised Root Host (DMZ Server - Central Hub)
+                const nHost = addNode(inc.root_entity, inc.root_entity, 'host', 'Compromised DMZ Server', 'HIGH (Direct Foothold)', 0, 0);
 
-                // 3. User Identity
+                // 3. User Identity (Top Center)
                 const userName = (inc.usr && inc.usr !== 'unauthenticated') ? inc.usr : 'admin_svc';
-                const nUser = addNode('user-' + userName, userName, 'user', 'Compromised Identity', 'HIGH');
+                const nUser = addNode('user-' + userName, userName, 'user', 'Compromised Identity', 'HIGH', 0, -115);
 
-                // 4. Remote C2 / Exfiltration nodes from timeline hops
+                // 4. Remote C2 / Exfiltration nodes (Upper Right)
                 let remoteCount = 0;
                 inc.timeline_hops.forEach(hop => {
                     if (hop.dest_ip && hop.dest_ip !== inc.root_entity && !hop.dest_ip.startsWith('10.10.') && remoteCount < 2) {
-                        const nRemote = addNode(hop.dest_ip, hop.dest_ip, 'c2', 'C2 Endpoint / Exfil Sink', 'CRITICAL');
+                        const nRemote = addNode(hop.dest_ip, hop.dest_ip, 'c2', 'C2 Endpoint / Exfil Sink', 'CRITICAL', 180, -70 + (remoteCount * 50));
                         this.edges.push({
                             source: nHost,
                             target: nRemote,
@@ -579,7 +580,7 @@
                 });
 
                 if (remoteCount === 0) {
-                    const nC2 = addNode('185.251.111.41', '185.251.111.41', 'c2', 'Cobalt Strike C2 Beacon', 'CRITICAL');
+                    const nC2 = addNode('185.251.111.41', '185.251.111.41', 'c2', 'Cobalt Strike C2 Beacon', 'CRITICAL', 180, -70);
                     this.edges.push({
                         source: nHost,
                         target: nC2,
@@ -613,10 +614,12 @@
                     isLookahead: false
                 });
 
-                // 7. Hop-1 Subnet Peers (Broadcast Reachability)
+                // 7. Hop-1 Subnet Peers (Broadcast Reachability - Bottom Neighbors)
                 if (inc.blast_radius && inc.blast_radius.hop1_sample_peers) {
-                    inc.blast_radius.hop1_sample_peers.slice(0, 3).forEach(peerIp => {
-                        const nPeer = addNode(peerIp, peerIp, 'peer', 'Hop-1 Subnet Neighbor (ARP Visible)', 'LOW (Exposed)');
+                    const peerOffsets = [[-80, 115], [0, 125], [80, 115]];
+                    inc.blast_radius.hop1_sample_peers.slice(0, 3).forEach((peerIp, pIdx) => {
+                        const off = peerOffsets[pIdx] || [0, 120];
+                        const nPeer = addNode(peerIp, peerIp, 'peer', 'Hop-1 Subnet Neighbor (ARP Visible)', 'LOW (Exposed)', off[0], off[1]);
                         this.edges.push({
                             source: nHost,
                             target: nPeer,
@@ -629,8 +632,8 @@
                     });
                 }
 
-                // 8. Hop-2 Mission Critical Target Assets (Domain Controller & Central DB Vault)
-                const nDC = addNode('10.10.99.1', '10.10.99.1 (DC)', 'dc', 'Primary Active Directory Domain Controller', 'CORE MISSION CRITICAL');
+                // 8. Hop-2 Mission Critical Target Assets (Domain Controller & Central DB Vault - Right Targets)
+                const nDC = addNode('10.10.99.1', '10.10.99.1 (DC)', 'dc', 'Primary Active Directory Domain Controller', 'CORE MISSION CRITICAL', 190, 30);
                 this.edges.push({
                     source: nHost,
                     target: nDC,
@@ -641,7 +644,17 @@
                     isLookahead: true
                 });
 
-                const nDB = addNode('10.10.99.10', '10.10.99.10 (DB)', 'dc', 'Customer Database Vault', 'CORE MISSION CRITICAL');
+                const nDB = addNode('10.10.99.10', '10.10.99.10 (DB)', 'dc', 'Customer Database Vault', 'CORE MISSION CRITICAL', 190, 105);
+                this.edges.push({
+                    source: nHost,
+                    target: nDB,
+                    rel: '[:BLAST_VECTOR]',
+                    tech_id: 'HOP-2',
+                    stage: 'Predictive Reachability',
+                    evidence: 'Remote SQL Injection / Credential Theft',
+                    isLookahead: true
+                });
+            }
                 this.edges.push({
                     source: nHost,
                     target: nDB,
@@ -702,6 +715,7 @@
                         this.draggedNode.y = (e.clientY - rect.top - this.panY) / this.zoom;
                         this.draggedNode.vx = 0;
                         this.draggedNode.vy = 0;
+                        this.alpha = 0.25; // Re-awaken simulation while dragging
                     } else if (this.isPanning) {
                         this.panX = e.clientX - this.panStartX;
                         this.panY = e.clientY - this.panStartY;
@@ -795,9 +809,15 @@
             }
 
             updatePhysics() {
-                const kRepel = 3200;
-                const kSpring = 0.04;
-                const restLength = 125;
+                if (this.alpha <= 0.002) {
+                    this.alpha = 0;
+                    return; // Physics is settled in equilibrium! Zero runaway drift!
+                }
+                this.alpha *= 0.985; // smooth cooling decay
+
+                const kRepel = 2400;
+                const kSpring = 0.045;
+                const restLength = 115;
 
                 // Repulsion between all nodes
                 for (let i = 0; i < this.nodes.length; i++) {
@@ -806,10 +826,11 @@
                         const n2 = this.nodes[j];
                         const dx = n2.x - n1.x;
                         const dy = n2.y - n1.y;
-                        const dist = Math.hypot(dx, dy) || 1;
-                        const force = kRepel / (dist * dist);
-                        const fx = (dx / dist) * force;
-                        const fy = (dy / dist) * force;
+                        const rawDist = Math.hypot(dx, dy) || 1;
+                        const dist = Math.max(rawDist, 45); // prevent singularity
+                        const force = Math.min((kRepel / (dist * dist)), 8) * this.alpha;
+                        const fx = (dx / rawDist) * force;
+                        const fy = (dy / rawDist) * force;
 
                         if (n1 !== this.draggedNode) { n1.vx -= fx; n1.vy -= fy; }
                         if (n2 !== this.draggedNode) { n2.vx += fx; n2.vy += fy; }
@@ -823,21 +844,21 @@
                     const dx = n2.x - n1.x;
                     const dy = n2.y - n1.y;
                     const dist = Math.hypot(dx, dy) || 1;
-                    const force = (dist - restLength) * kSpring;
+                    const force = (dist - restLength) * kSpring * this.alpha;
                     const fx = (dx / dist) * force;
                     const fy = (dy / dist) * force;
 
                     if (n1 !== this.draggedNode) { n1.vx += fx; n1.vy += fy; }
-                    if (n2 !== this.draggedNode) { n2.vx -= fx; n2.vy += fy; }
+                    if (n2 !== this.draggedNode) { n2.vx += fx; n2.vy += fy; }
                 });
 
                 // Center gravity and velocity damping
                 this.nodes.forEach(n => {
                     if (n !== this.draggedNode) {
-                        n.vx -= n.x * 0.006;
-                        n.vy -= n.y * 0.006;
-                        n.vx *= 0.85;
-                        n.vy *= 0.85;
+                        n.vx -= n.x * 0.015 * this.alpha;
+                        n.vy -= n.y * 0.015 * this.alpha;
+                        n.vx *= 0.82;
+                        n.vy *= 0.82;
                         n.x += n.vx;
                         n.y += n.vy;
                     }
@@ -981,6 +1002,7 @@
                 this.panX = this.cssWidth / 2;
                 this.panY = this.cssHeight / 2;
                 this.zoom = 1.0;
+                this.alpha = 0.8;
             }
 
             zoom(factor) {
@@ -989,6 +1011,9 @@
 
             togglePhysics() {
                 this.isPhysicsRunning = !this.isPhysicsRunning;
+                if (this.isPhysicsRunning) {
+                    this.alpha = 0.5;
+                }
             }
         }
 
