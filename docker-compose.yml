@@ -1,0 +1,15 @@
+services:
+  cyberforge-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cyberforge-killchain-engine
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./out:/app/out
+    environment:
+      - KILLCHAIN_DB_PATH=/app/out/killchain.duckdb
+      - KILLCHAIN_REPORT_PATH=/app/out/incident_report.html
+    restart: unless-stopped
