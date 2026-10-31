@@ -1,7 +1,10 @@
 """
-Patch templates/incident_report.j2 with the robust pure-function Canvas Infection Replay Engine.
-Fixes play behavior: auto-restarts from 0 if at end, safe DPR transform, roundRect polyfill,
-and failsafe readyState initialization.
+Patch templates/incident_report.j2 with enhanced playback controls:
+- Smooth rewind from end to beginning on 'Play Again'
+- '⏮ Reset' brings scrubber cleanly from end to beginning and pauses at t=0
+- Dynamic button labels: '▶ Play Campaign' -> '⏸ Pause' -> '▶ Resume' -> '🔄 Play Again'
+- Pauses during scrubber drag to prevent timeline fight
+- Keyboard shortcuts: Space (Play/Pause), Home/R (Reset to 0), Left/Right arrows (+/-15m)
 """
 import re
 import os
@@ -241,6 +244,7 @@ JS_ENGINE_CODE = r"""    <script>
                     const pos = getPos(e);
                     // Check if clicking inside timeline strip
                     if (pos.y >= stripY - 12) {
+                        this.pause(); // Pause playback while user is scrubbing
                         const contX = timeToX(this.containmentT);
 
                         if (Math.abs(pos.x - contX) <= 14) {
@@ -303,9 +307,10 @@ JS_ENGINE_CODE = r"""    <script>
 
             // Public API methods
             play() {
-                // If scrubber is already at the end of the campaign, restart from 0
-                if (this.tNow >= this.totalDuration - 1) {
+                // If scrubber is already at the end of the campaign, bring it cleanly back to 0
+                if (this.tNow >= this.totalDuration - 1.5) {
                     this.tNow = 0;
+                    this.syncExternalControls();
                 }
                 this.isPlaying = true;
                 this.lastRafTime = performance.now();
@@ -316,12 +321,21 @@ JS_ENGINE_CODE = r"""    <script>
             pause() {
                 this.isPlaying = false;
                 this.lastRafTime = null;
+                this.syncExternalControls();
+            }
+
+            reset() {
+                // Bring back from end to beginning cleanly and pause
+                this.isPlaying = false;
+                this.lastRafTime = null;
+                this.seek(0);
                 const btn = document.getElementById('btn-play-' + this.incId);
                 if (btn) btn.innerHTML = '▶ Play Campaign';
             }
 
             restart() {
-                this.seek(0);
+                this.tNow = 0;
+                this.syncExternalControls();
                 this.play();
             }
 
@@ -400,6 +414,20 @@ JS_ENGINE_CODE = r"""    <script>
                 const riskDisp = document.getElementById('risk-display-' + this.incId);
                 if (riskDisp && this.currentRisk !== undefined) {
                     riskDisp.innerHTML = `${Math.round(this.currentRisk)} / 100`;
+                }
+
+                // Dynamic, crystal-clear button labels
+                const btn = document.getElementById('btn-play-' + this.incId);
+                if (btn) {
+                    if (this.isPlaying) {
+                        btn.innerHTML = '⏸ Pause';
+                    } else if (this.tNow >= this.totalDuration - 1.5) {
+                        btn.innerHTML = '🔄 Play Again';
+                    } else if (this.tNow <= 0.5) {
+                        btn.innerHTML = '▶ Play Campaign';
+                    } else {
+                        btn.innerHTML = '▶ Resume';
+                    }
                 }
             }
 
@@ -560,11 +588,9 @@ JS_ENGINE_CODE = r"""    <script>
             }
 
             renderBackgroundAndStages(ctx, W, H) {
-                // Background dark tech tone
                 ctx.fillStyle = '#0a0f1d';
                 ctx.fillRect(0, 0, W, H);
 
-                // Stage Column Indicators
                 const padX = 75;
                 const availW = W - 2 * padX;
                 const stages = [
@@ -580,7 +606,6 @@ JS_ENGINE_CODE = r"""    <script>
 
                 stages.forEach((st, i) => {
                     const x = padX + (i / 4) * availW;
-                    // Vertical guideline
                     ctx.strokeStyle = 'rgba(30, 41, 59, 0.45)';
                     ctx.setLineDash([3, 5]);
                     ctx.beginPath();
@@ -589,7 +614,6 @@ JS_ENGINE_CODE = r"""    <script>
                     ctx.stroke();
                     ctx.setLineDash([]);
 
-                    // Header badge
                     ctx.fillStyle = '#64748b';
                     ctx.fillText(st.title, x, 28);
                     ctx.fillStyle = '#475569';
@@ -610,7 +634,6 @@ JS_ENGINE_CODE = r"""    <script>
                         ctx.strokeStyle = `rgba(56, 189, 248, ${clamp(pDst * 0.85, 0.2, 0.9)})`;
                         ctx.lineWidth = 1.6;
                         ctx.setLineDash([4, 6]);
-                        // Marching ants animation with tNow
                         ctx.lineDashOffset = -((tNow * 12 + performance.now() * 0.04) % 10);
                         trace(ctx, src, dst, 0, 1);
                         ctx.stroke();
@@ -624,7 +647,7 @@ JS_ENGINE_CODE = r"""    <script>
                 ctx.save();
                 this.events.forEach((e, idx) => {
                     const td = tNow - e.t_min;
-                    if (td < 0) return; // Not drawn yet
+                    if (td < 0) return;
 
                     const src = this.nodeMap[e.src], dst = this.nodeMap[e.dst];
                     if (!src || !dst) return;
@@ -632,14 +655,12 @@ JS_ENGINE_CODE = r"""    <script>
                     const colRgb = STAGE_COLORS[e.stage] || '239,68,68';
 
                     if (td <= 6) {
-                        // Progressive draw head travels src->dst (0..6m)
                         const u = clamp(td / 6, 0, 1);
                         ctx.strokeStyle = `rgba(${colRgb}, 0.9)`;
                         ctx.lineWidth = 2.4;
                         trace(ctx, src, dst, 0, u);
                         ctx.stroke();
 
-                        // Bright head dot
                         const head = bz(src, dst, u);
                         ctx.fillStyle = '#ffffff';
                         ctx.shadowColor = `rgb(${colRgb})`;
@@ -649,14 +670,12 @@ JS_ENGINE_CODE = r"""    <script>
                         ctx.fill();
                         ctx.shadowBlur = 0;
                     } else {
-                        // Solid edge drawn
                         const alpha = td < 30 ? 0.85 : 0.45;
                         ctx.strokeStyle = `rgba(${colRgb}, ${alpha})`;
                         ctx.lineWidth = Math.min(3.5, 1.4 + (e.conf || 0.8) * 1.5);
                         trace(ctx, src, dst, 0, 1);
                         ctx.stroke();
 
-                        // Photon particle traveling src->dst if age < 45
                         if (td < 45) {
                             const uPhoton = ((tNow * 1.8 + idx * 0.25) % 1.2) / 1.2;
                             if (uPhoton <= 1.0) {
@@ -671,7 +690,6 @@ JS_ENGINE_CODE = r"""    <script>
                             }
                         }
 
-                        // Edge label pill at midpoint (fades in 0..10, fades out by 50)
                         if (td <= 50) {
                             const pillAlpha = td <= 10 ? (td / 10) : clamp((50 - td) / 40, 0, 1);
                             const mid = bz(src, dst, 0.5);
@@ -717,7 +735,6 @@ JS_ENGINE_CODE = r"""    <script>
                         ctx.stroke();
                         ctx.setLineDash([]);
 
-                        // Labels: P and ETA
                         const eta = Math.round(etaMap[n.id] || 38);
                         ctx.font = '8.5px monospace';
                         ctx.textAlign = 'center';
@@ -726,7 +743,6 @@ JS_ENGINE_CODE = r"""    <script>
                         ctx.fillStyle = '#94a3b8';
                         ctx.fillText(`ETA +${eta}m (model estimate)`, n.x, n.y - R - 3);
 
-                        // Node IP below
                         ctx.fillStyle = '#64748b';
                         ctx.fillText(n.id, n.x, n.y + R + 12);
                     }
@@ -740,13 +756,12 @@ JS_ENGINE_CODE = r"""    <script>
 
                 this.nodes.forEach(n => {
                     const age = tNow - n.t;
-                    if (age < 0) return; // Handled as ghost or invisible
+                    if (age < 0) return;
 
                     const colRgb = TYPE_COLORS[n.type] || '6,182,212';
                     const scale = easeOutBack(clamp(age / 8));
                     const heat = age < 25 ? 1 : clamp(1 - (age - 25) / 55);
 
-                    // Heat Wavefront (0..40m)
                     if (age < 40) {
                         ctx.save();
                         ctx.globalCompositeOperation = 'lighter';
@@ -761,7 +776,6 @@ JS_ENGINE_CODE = r"""    <script>
                         ctx.restore();
                     }
 
-                    // Node body & glow
                     ctx.shadowColor = `rgb(${colRgb})`;
                     ctx.shadowBlur = 22 * heat;
                     ctx.fillStyle = `rgba(${colRgb}, ${0.25 + 0.65 * heat})`;
@@ -774,7 +788,6 @@ JS_ENGINE_CODE = r"""    <script>
                     ctx.stroke();
                     ctx.shadowBlur = 0;
 
-                    // Active white-hot core dot (0..25m)
                     if (age < 25) {
                         ctx.fillStyle = `rgba(255,255,255, ${heat})`;
                         ctx.beginPath();
@@ -782,7 +795,6 @@ JS_ENGINE_CODE = r"""    <script>
                         ctx.fill();
                     }
 
-                    // Ripple ring (0..22m)
                     if (age < 22) {
                         const u = age / 22;
                         ctx.strokeStyle = `rgba(${colRgb}, ${0.7 * (1 - u)})`;
@@ -792,21 +804,18 @@ JS_ENGINE_CODE = r"""    <script>
                         ctx.stroke();
                     }
 
-                    // Type text inside node
                     ctx.fillStyle = '#ffffff';
                     ctx.font = 'bold 9px -apple-system, monospace';
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'middle';
                     ctx.fillText(n.type, n.x, n.y);
 
-                    // IP & Timestamp label below
                     ctx.font = '9px monospace';
                     ctx.fillStyle = '#e2e8f0';
                     ctx.fillText(n.id, n.x, n.y + R + 12);
                     ctx.fillStyle = '#38bdf8';
                     ctx.fillText(`T+${Math.round(n.t)}m`, n.x, n.y + R + 22);
 
-                    // FRONTIER Node: pulsing amber ring + "ACTIVE" tag
                     if (frontierNode && frontierNode.id === n.id && (tNow - n.t) < 45) {
                         const pulse = (Math.sin(performance.now() * 0.006) + 1) / 2;
                         ctx.strokeStyle = `rgba(245, 158, 11, ${0.5 + 0.5 * pulse})`;
@@ -815,7 +824,6 @@ JS_ENGINE_CODE = r"""    <script>
                         ctx.arc(n.x, n.y, R * 1.5 + 4 * pulse, 0, 6.283);
                         ctx.stroke();
 
-                        // "ACTIVE" Chip above node
                         ctx.fillStyle = '#f59e0b';
                         ctx.beginPath();
                         ctx.roundRect(n.x - 22, n.y - R - 22, 44, 14, 4);
@@ -876,7 +884,6 @@ JS_ENGINE_CODE = r"""    <script>
                     ctx.fillStyle = 'rgba(168, 85, 247, 0.16)';
                     ctx.fillRect(p10X, stripY + 12, Math.max(2, p90X - p10X), 52);
 
-                    // DC Marker P50
                     ctx.strokeStyle = '#a855f7';
                     ctx.lineWidth = 1.5;
                     ctx.setLineDash([3, 3]);
@@ -948,13 +955,11 @@ JS_ENGINE_CODE = r"""    <script>
                 ctx.stroke();
                 ctx.setLineDash([]);
 
-                // Containment handle shield
                 ctx.fillStyle = '#f59e0b';
                 ctx.beginPath();
                 ctx.arc(contX, stripY + 12, 5, 0, 6.283);
                 ctx.fill();
 
-                // Containment what-if chip
                 const savedEst = this.containmentT <= 60 ? (this.temporal.saved_assets_at_60 || 6) : (this.temporal.saved_assets_at_120 || 2);
                 ctx.fillStyle = '#f59e0b';
                 ctx.font = '8.5px monospace';
@@ -982,13 +987,11 @@ JS_ENGINE_CODE = r"""    <script>
                 ctx.arc(nowX, baseY, 3, 0, 6.283);
                 ctx.fill();
 
-                // NOW Scrubber Timestamp label
                 ctx.fillStyle = '#ffffff';
                 ctx.font = 'bold 9px monospace';
                 ctx.textAlign = 'center';
                 ctx.fillText(`T+${Math.round(tNow)}m`, nowX, stripY + 76);
 
-                // Timeline Strip Title & Bounds
                 ctx.fillStyle = '#64748b';
                 ctx.font = '9px monospace';
                 ctx.textAlign = 'left';
@@ -1011,7 +1014,6 @@ JS_ENGINE_CODE = r"""    <script>
                 ctx.fill();
                 ctx.stroke();
 
-                // Calculate inter-event gap
                 let lastEventBefore = 0;
                 this.events.forEach(ev => {
                     if (ev.t_min <= tNow && ev.t_min > lastEventBefore) lastEventBefore = ev.t_min;
@@ -1022,7 +1024,6 @@ JS_ENGINE_CODE = r"""    <script>
                 ctx.textAlign = 'left';
                 ctx.textBaseline = 'top';
 
-                // Line 1: Time, Cadence, Slope
                 ctx.font = 'bold 11px monospace';
                 ctx.fillStyle = '#ffffff';
                 ctx.fillText(`T+${String(Math.round(tNow)).padStart(3, '0')}m`, hudX + 12, hudY + 10);
@@ -1030,7 +1031,6 @@ JS_ENGINE_CODE = r"""    <script>
                 ctx.fillStyle = '#38bdf8';
                 ctx.fillText(`Cadence: ${this.cadenceMedian.toFixed(1)}m (${this.cadenceTrend}) (model estimate)`, hudX + 80, hudY + 11);
 
-                // Line 2: Risk and Velocity
                 const riskVal = Math.round(this.currentRisk);
                 ctx.fillStyle = riskVal > 75 ? '#ef4444' : (riskVal > 45 ? '#f59e0b' : '#10b981');
                 ctx.font = 'bold 10.5px monospace';
@@ -1039,19 +1039,16 @@ JS_ENGINE_CODE = r"""    <script>
                 ctx.font = '10px monospace';
                 ctx.fillText(`Velocity: +${(1.2 + (riskVal / 100)).toFixed(1)}/min (model estimate)`, hudX + 130, hudY + 31);
 
-                // Line 3: Frontier
                 const frontStr = frontierNode ? `${frontierNode.id} (${frontierNode.type})` : 'Perimeter WAN';
                 ctx.fillStyle = '#e2e8f0';
                 ctx.fillText(`Frontier: ${frontStr} ──► DC Reachable (model estimate)`, hudX + 12, hudY + 50);
 
-                // Line 4: Mode & Speed
                 ctx.fillStyle = '#cbd5e1';
-                const modeStr = this.isPlaying ? `PLAYING (${this.speed} min/s)` : 'PAUSED (Scrubber Ready)';
+                const modeStr = this.isPlaying ? `PLAYING (${this.speed} min/s)` : (this.tNow >= this.totalDuration - 1.5 ? 'COMPLETED (Click Replay)' : 'PAUSED (Scrubber Ready)');
                 ctx.fillText(`Mode: ${modeStr}`, hudX + 12, hudY + 69);
 
-                // Line 5: Status
                 if (isPerimeterDormant) {
-                    ctx.fillStyle = '#f59e0b'; // Amber warning
+                    ctx.fillStyle = '#f59e0b';
                     ctx.fillText('Status: No perimeter-visible activity (intra-subnet or dormant)', hudX + 12, hudY + 88);
                 } else {
                     ctx.fillStyle = '#38bdf8';
@@ -1123,7 +1120,7 @@ JS_ENGINE_CODE = r"""    <script>
 
         function resetScrubber(incId) {
             const g = getGraph(incId);
-            if (g) g.restart();
+            if (g) g.reset();
         }
 
         function stepScrubber(incId, delta) {
@@ -1133,7 +1130,10 @@ JS_ENGINE_CODE = r"""    <script>
 
         function onScrubInput(incId, val) {
             const g = getGraph(incId);
-            if (g) g.seek(parseFloat(val));
+            if (g) {
+                g.pause(); // Pause while user drags the slider
+                g.seek(parseFloat(val));
+            }
         }
 
         function zoomGraph(incId, factor) {
@@ -1162,6 +1162,26 @@ JS_ENGINE_CODE = r"""    <script>
             }
         }
 
+        // Keyboard shortcuts for flawless demo presentation
+        window.addEventListener('keydown', (e) => {
+            if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+            const g = Object.values(GRAPH_INSTANCES)[0];
+            if (!g) return;
+            if (e.code === 'Space') {
+                e.preventDefault();
+                g.isPlaying ? g.pause() : g.play();
+            } else if (e.code === 'KeyR' || e.code === 'Home') {
+                e.preventDefault();
+                g.reset();
+            } else if (e.code === 'ArrowLeft') {
+                e.preventDefault();
+                g.seek(g.tNow - 15);
+            } else if (e.code === 'ArrowRight') {
+                e.preventDefault();
+                g.seek(g.tNow + 15);
+            }
+        });
+
         // Safe initialization handling whether DOM is still loading or already parsed
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', initAllGraphs);
@@ -1187,7 +1207,7 @@ def patch_template():
     with open(TEMPLATE_PATH, "w", encoding="utf-8") as f:
         f.write(new_content)
 
-    print("Successfully patched templates/incident_report.j2 with robust Temporal Infection Replay Engine!")
+    print("Successfully patched templates/incident_report.j2 with enhanced playback controls!")
 
 if __name__ == "__main__":
     patch_template()
