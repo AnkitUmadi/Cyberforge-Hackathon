@@ -148,6 +148,7 @@ export interface EngineOptions {
     camera?: Partial<CameraConfig>;
     seed?: number;
     patientZero?: Point2D;
+    isCausalReplay?: boolean;
 }
 
 export class CausalTerritorialEngine {
@@ -159,6 +160,7 @@ export class CausalTerritorialEngine {
     public events: NodeEvent[] = [];
     public subnetArchetypes: Map<string, SubnetArchetype> = new Map();
     public playbackEngine: PresenterPlaybackEngine | null = null;
+    public isCausalReplay: boolean = false;
 
     // Interactive Camera Transform Overrides
     public panX: number = 0;
@@ -168,6 +170,7 @@ export class CausalTerritorialEngine {
     public selectedNodeId: string | null = null;
 
     constructor(options: EngineOptions = {}) {
+        this.isCausalReplay = options.isCausalReplay ?? false;
         this.territoryEngine = new CausalTerritoryEngine(options.territory, options.seed ?? 1337);
         if (options.patientZero) {
             this.territoryEngine.patientZeroPos = options.patientZero;
@@ -448,21 +451,34 @@ export class CausalTerritorialEngine {
                 // If parent exists and is born, record settled causal edge
                 if (vn.node.parent) {
                     const parentNode = this.nodeMap.get(vn.node.parent);
-                    if (parentNode && t >= parentNode.birthTime) {
+                    const isDcTarget = vn.node.archetype === 'CROWN_JEWELS_AD' || vn.node.type === 'DC' || vn.node.cluster.includes('DC');
+                    if (parentNode && (t >= parentNode.birthTime || (this.isCausalReplay && isDcTarget))) {
                         const parentBud = getBudState(parentNode, t);
                         let edgeColor = '#38bdf8';
-                        if (vn.node.archetype === 'CROWN_JEWELS_AD' || vn.node.type === 'DC') edgeColor = '#f43f5e';
+                        
+                        if (this.isCausalReplay && isDcTarget) {
+                            if (t < vn.node.birthTime) {
+                                edgeColor = '#f59e0b'; // 1. First yellow line goes to DC (probing/staging)
+                            } else if (t < vn.node.birthTime + 22.0) {
+                                edgeColor = '#ef4444'; // 2. Then line changes to red (active intrusion/compromise)
+                            } else {
+                                edgeColor = '#38bdf8'; // 3. Finally line changes to blue (settled persistent link)
+                            }
+                        } else if (vn.node.archetype === 'CROWN_JEWELS_AD' || vn.node.type === 'DC') edgeColor = '#f43f5e';
                         else if (vn.node.type === 'C2') edgeColor = '#a855f7';
                         else if (vn.node.type === 'USER') edgeColor = '#f59e0b';
                         else if (vn.node.criticality >= 0.75) edgeColor = '#f59e0b';
+
+                        const toX = budState.isBorn ? budState.x : vn.node.x;
+                        const toY = budState.isBorn ? budState.y : vn.node.y;
 
                         settledEdges.push({
                             sourceId: vn.node.parent,
                             targetId: vn.node.id,
                             fromX: parentBud.x,
                             fromY: parentBud.y,
-                            toX: budState.x,
-                            toY: budState.y,
+                            toX: toX,
+                            toY: toY,
                             color: edgeColor,
                             isCrossSubnet: parentNode.cluster !== vn.node.cluster,
                             criticality: vn.node.criticality,
@@ -607,9 +623,13 @@ export class CausalTerritorialEngine {
 
             ctx.strokeStyle = edge.color;
             ctx.globalAlpha = Math.min(0.85, 0.25 + 0.6 * edge.progress);
-            ctx.lineWidth = (edge.criticality >= 0.75 ? 2.2 : 1.4) / effZoom;
-            if (edge.isCrossSubnet) {
-                ctx.setLineDash([5, 4]);
+            const isThreatEdge = edge.color === '#f59e0b' || edge.color === '#ef4444';
+            ctx.lineWidth = (isThreatEdge ? 2.8 : (edge.criticality >= 0.75 ? 2.2 : 1.4)) / effZoom;
+            if (edge.isCrossSubnet || isThreatEdge) {
+                ctx.setLineDash([6, 4]);
+                if (isThreatEdge) {
+                    ctx.lineDashOffset = -((t * 18) % 24);
+                }
             }
             ctx.stroke();
 
@@ -617,18 +637,18 @@ export class CausalTerritorialEngine {
             const dx = edge.toX - edge.fromX;
             const dy = edge.toY - edge.fromY;
             const len = Math.hypot(dx, dy);
-            if (len > 35) {
+            if (len > 25) {
                 const angle = Math.atan2(dy, dx);
                 const arrowDist = 18; // offset from target node radius
                 const ax = edge.toX - Math.cos(angle) * arrowDist;
                 const ay = edge.toY - Math.sin(angle) * arrowDist;
-                const headLen = 6 / effZoom;
+                const headLen = (isThreatEdge ? 9.5 : 6) / effZoom;
 
                 ctx.fillStyle = edge.color;
                 ctx.beginPath();
                 ctx.moveTo(ax, ay);
-                ctx.lineTo(ax - headLen * Math.cos(angle - Math.PI / 6), ay - headLen * Math.sin(angle - Math.PI / 6));
-                ctx.lineTo(ax - headLen * Math.cos(angle + Math.PI / 6), ay - headLen * Math.sin(angle + Math.PI / 6));
+                ctx.lineTo(ax - headLen * Math.cos(angle - Math.PI / 5), ay - headLen * Math.sin(angle - Math.PI / 5));
+                ctx.lineTo(ax - headLen * Math.cos(angle + Math.PI / 5), ay - headLen * Math.sin(angle + Math.PI / 5));
                 ctx.closePath();
                 ctx.fill();
             }
@@ -697,7 +717,7 @@ export class CausalTerritorialEngine {
             ctx.save();
             ctx.globalAlpha = n.alpha;
 
-            const isCrown = n.archetype === 'CROWN_JEWELS_AD' || n.type === 'DC';
+            const isCrown = n.archetype === 'CROWN_JEWELS_AD' || n.type === 'DC' || n.cluster.includes('DC');
             const r = (isCrown ? 16 : 12) * n.scale;
 
             if (r > 0.5) {
@@ -705,8 +725,20 @@ export class CausalTerritorialEngine {
                 let typeCode = 'HOST';
 
                 if (isCrown) {
-                    color = '#f43f5e';
-                    typeCode = 'DC';
+                    if (this.isCausalReplay && t >= n.birthTime + 10.0) {
+                        // User request: "and that dc will be become yellow host"
+                        color = '#f59e0b'; // Yellow host
+                        typeCode = 'HOST';
+                    } else if (this.isCausalReplay && t >= n.birthTime) {
+                        color = '#ef4444'; // Red active compromise
+                        typeCode = 'DC';
+                    } else if (this.isCausalReplay) {
+                        color = '#f59e0b'; // Probed
+                        typeCode = 'DC';
+                    } else {
+                        color = '#f43f5e';
+                        typeCode = 'DC';
+                    }
                 } else if (n.type === 'C2') {
                     color = '#a855f7';
                     typeCode = 'C2';
@@ -775,7 +807,8 @@ export class CausalTerritorialEngine {
                 }
 
                 // Anti-Collision Dark Rounded Pill Badge Underneath Node
-                const labelStr = n.label || n.id;
+                const isDcCompromisedHost = this.isCausalReplay && isCrown && t >= n.birthTime + 10.0;
+                const labelStr = isDcCompromisedHost ? '10.10.99.1 [HOST COMPROMISED]' : (n.label || n.id);
                 const timeStr = `T+${Math.round(n.birthTime)}m`;
                 const displayStr = `${labelStr} [${timeStr}]`;
 
@@ -787,7 +820,7 @@ export class CausalTerritorialEngine {
                 const badgeY = Math.round(ny + r + 5);
 
                 ctx.fillStyle = 'rgba(9, 14, 26, 0.96)';
-                ctx.strokeStyle = isSelected ? '#38bdf8' : (isCrown ? 'rgba(244, 63, 94, 0.7)' : 'rgba(51, 65, 85, 0.9)');
+                ctx.strokeStyle = isSelected ? '#38bdf8' : (isDcCompromisedHost ? '#f59e0b' : (isCrown ? 'rgba(244, 63, 94, 0.7)' : 'rgba(51, 65, 85, 0.9)'));
                 ctx.lineWidth = 1.2 / effZoom;
 
                 if (typeof ctx.roundRect === 'function') {
@@ -800,7 +833,7 @@ export class CausalTerritorialEngine {
                     ctx.strokeRect(badgeX, badgeY, badgeW, badgeH);
                 }
 
-                ctx.fillStyle = isCrown ? '#fca5a5' : '#ffffff';
+                ctx.fillStyle = isDcCompromisedHost ? '#fde047' : (isCrown ? '#fca5a5' : '#ffffff');
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 ctx.fillText(displayStr, nx, badgeY + badgeH / 2);
