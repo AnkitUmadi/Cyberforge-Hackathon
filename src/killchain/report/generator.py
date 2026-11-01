@@ -22,10 +22,13 @@ def generate_report(db_path: str = "out/killchain.duckdb", template_path: str = 
 
     conn = get_connection(db_path)
 
-    # 1. Query KPI metrics
-    total_events = conn.execute("SELECT count(1) FROM events;").fetchone()[0]
-    total_alerts = conn.execute("SELECT count(1) FROM alerts;").fetchone()[0]
-    total_incidents = conn.execute("SELECT count(1) FROM incidents;").fetchone()[0]
+    # 1. Query KPI metrics and official PRD evaluation audit
+    from ..eval.metrics import evaluate_engine
+    metrics = evaluate_engine(db_path)
+
+    total_events = metrics["total_events"]
+    total_alerts = metrics["total_alerts"]
+    total_incidents = metrics["total_incidents"]
     peak_risk_score = conn.execute("SELECT coalesce(max(risk_score), 0) FROM incidents;").fetchone()[0]
 
     # 2. Query Top Incidents
@@ -109,7 +112,8 @@ def generate_report(db_path: str = "out/killchain.duckdb", template_path: str = 
         total_incidents=total_incidents,
         peak_risk_score=peak_risk_score,
         top_incidents=top_incidents,
-        incidents_json=json.dumps(top_incidents)
+        incidents_json=json.dumps(top_incidents),
+        metrics=metrics
     )
 
     # 4. Save to output path
