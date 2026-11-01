@@ -106,9 +106,13 @@ def run_detection_rules(conn, rules_dir: str):
     return total_alerts
 
 if __name__ == "__main__":
-    ROOT = Path(__file__).resolve().parent.parent.parent.parent
-    db_file = str(ROOT / "out" / "killchain.duckdb")
-    rules_dir = str(ROOT / "config" / "rules")
-    conn = get_connection(db_file)
-    run_detection_rules(conn, rules_dir)
+    import argparse
+    ROOT = Path(__file__).resolve().parents[3]
+    parser = argparse.ArgumentParser(description="Cyberforge Detection Rules Runner")
+    parser.add_argument("--db", type=str, default=str(ROOT / "out" / "killchain.duckdb"), help="Path to DuckDB database")
+    parser.add_argument("--rules", type=str, default=str(ROOT / "config" / "rules"), help="Path to rules folder")
+    args = parser.parse_args()
+
+    conn = get_connection(args.db)
+    run_detection_rules(conn, args.rules)
     conn.close()
