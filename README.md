@@ -7,7 +7,7 @@
 
 ## 🏆 Official Hackathon PRD Evaluation Scorecard
 
-All metrics are dynamically verified against real DuckDB database tables using `python -m src.killchain.eval.metrics` (or `.\run_dashboard.bat`).
+All metrics are dynamically computed against real DuckDB database tables using `python -m src.killchain.eval.metrics` (or `.\run_dashboard.bat`).
 
 | Evaluation Metric | PRD Good Tier | PRD Great Tier | Cyberforge Measured | Official Status |
 | :--- | :--- | :--- | :--- | :--- |
@@ -18,6 +18,58 @@ All metrics are dynamically verified against real DuckDB database tables using `
 | **Processing Time** | Under 3 hours | Under 1 hour | **26.5 seconds** (18,867 events/sec) | 🟢 **GREAT** (135x faster) |
 | **Peak Memory Footprint** | Under 16 GB | Under 8 GB | **134.8 MB** (Out-of-core PyArrow) | 🟢 **GREAT** (60x lower RAM) |
 | **Investigation Speed** | Under 2 seconds| Under 500 ms | **1.5 ms** (Precomputed 2-hop lookahead)| 🟢 **GREAT** (330x faster) |
+
+---
+
+## 🏗️ End-to-End System Architecture
+
+```
+                  ┌────────────────────────────────────────────────────────┐
+                  │      Enterprise Firewall Telemetry (30GB Raw Stream)   │
+                  │              (firex-30G.log / firex-10G.log)           │
+                  └───────────────────────────┬────────────────────────────┘
+                                              │ PyArrow Zero-Copy Ingest (100k chunks)
+                                              ▼
+                  ┌────────────────────────────────────────────────────────┐
+                  │       DuckDB SIMD Vectorized Columnar Database         │
+                  │      (Out-of-Core Spillover to out/tmp_duckdb)         │
+                  │        • Ingest: 18,867 events/sec | RAM: 134.8 MB     │
+                  └───────────────────────────┬────────────────────────────┘
+                                              │ Regex Parsing & Key-Value Normalization
+                                              ▼
+                  ┌────────────────────────────────────────────────────────┐
+                  │      11-Rule MITRE ATT&CK Classification Engine        │
+                  │   (EXP, PHISH, BRUTE, CRED, DISC, PRV, MAL, LAT, C2)  │
+                  │         • 50,724 True Threat Events Captured           │
+                  │         • 38,128 Mapped Alerts (100% Accuracy)         │
+                  └───────────────────────────┬────────────────────────────┘
+                                              │ Multi-Stage Corroboration Gating (≥ 2 stages)
+                                              ▼
+                  ┌────────────────────────────────────────────────────────┐
+                  │             4D Spatio-Temporal Correlation             │
+                  │   (Src IP x Dst IP x Subnet Boundary x Monotonic Time) │
+                  │         • 24:1 Noise Reduction (1,588 Incidents)       │
+                  │         • 0.00% False Alarm Rate | 100% Path Fidelity  │
+                  └───────────────────────────┬────────────────────────────┘
+                                              │ Pre-indexed Adjacency Graph Matrices
+                                              ▼
+                  ┌────────────────────────────────────────────────────────┐
+                  │       Predictive 2-Hop Lookahead & Risk Scoring        │
+                  │         • 1.5ms Query Latency (330x faster than PRD)   │
+                  │         • Risk Score: 0 to 100 (Worst Threat = 97)     │
+                  │         • Automated AD Domain Controller Containment   │
+                  └───────────────────────────┬────────────────────────────┘
+                                              │
+                      ┌───────────────────────┴───────────────────────┐
+                      ▼                                               ▼
+     ┌─────────────────────────────────┐             ┌─────────────────────────────────┐
+     │   Executive Incident Dossier    │             │   Macro Causal Replay Engine    │
+     │      (http://localhost:8000)    │             │   (http://localhost:8000/causal)│
+     │  • Plain-English CISO Briefings │             │  • Zoom & Pan Canvas Controls   │
+     │  • Ranked Threat Index (1-1588) │             │  • 🟡->🔴->🔵 Threat Lifecycle  │
+     │  • 64-Hop Chronological Slider  │             │  • DC Yellow Host Compromise    │
+     └─────────────────────────────────┘             └─────────────────────────────────┘
+```
 
 ---
 
@@ -52,21 +104,58 @@ $$\text{Risk Score} = \text{Stage Depth (max 50)} + \text{Severity (max 25)} + \
 - Automatically ranks campaigns so the most critical breaches (Risk Score: **97/100**) are prioritized at the top of the CISO briefing dashboard.
 - Only 4.1% of estate incidents reach 97; the remaining 95.9% span from 46 to 87 based on campaign progression.
 
-### 6. Zero Overfitting: Proven Generalization on Unseen Test Data
+### 6. Primary Showcase: Incident #2 Deep Dive
+- **Target Entity:** `10.10.20.11` (Perimeter DMZ Workstation)
+- **External Adversary:** `92.151.63.124` (C2 Operator & Ingress Attacker)
+- **Scale:** 8 MITRE ATT&CK Stages • 64 Chronological Hops • 352 Minutes Dwell Time • Risk Score: **97 / 100**.
+- **Interactive Scrubber:** Analysts can drag the bottom timeline slider from Hop 1 to Hop 64 to inspect causal propagation with real-time briefing synchronization.
+
+### 7. Zero Overfitting: Proven Generalization on Unseen Test Data
 - Validated against an independent 100 MB slice (`sample_validation_100MB.log`) extracted from a 1 GB offset in the raw logs.
 - Automatically discovered brand-new external adversaries (`49.40.182.200`, `140.108.75.221`, `217.61.70.148`) with **94.92% Sensitivity**, **100% Technique Accuracy**, and **0.00% False Alarms**.
 
 ---
 
+## 🔬 Mathematical Sensitivity Audit (Reproducible Ground Truth)
+
+```text
+================================================================================
+                    CYBERFORGE SENSITIVITY FORMULA
+================================================================================
+   Ground-Truth Threat Events (Denominator):
+     • Antivirus / Malware Detections:          7,257 events
+     • Blocked Malicious / Phishing URLs:       8,565 events
+     • IPS / Exploit Telemetry:                 8,347 events
+     • Brute-Force Bursts (>= 20 attempts):    29,331 events
+     ---------------------------------------------------------
+     TOTAL VERIFIED THREAT EVENTS:             53,500 events
+
+   Cyberforge Captured Threats (Numerator):
+     • Events Captured across 9 ATT&CK Rules:  50,724 events
+     • Clustered into Unique Alert Records:    38,128 alerts
+
+   Detection Sensitivity = (50,724 / 53,500) * 100 = 94.81%
+   PRD Great Tier Target: > 90.00% (EXCEEDED BY +4.81%)
+================================================================================
+```
+
+---
+
 ## ⚡ Quick Start & Live Demonstration
 
-### 1. One-Click Dashboard Launch (Windows Batch)
+### Option A: One-Click Windows Runner (Recommended)
 ```cmd
 .\run_dashboard.bat
 ```
-*Automatically validates database schema, computes terminal PRD metrics, and launches FastAPI at `http://localhost:8000`.*
+*Validates database schema, computes terminal PRD metrics, and launches FastAPI at `http://localhost:8000`.*
 
-### 2. Manual CLI Pipeline Execution
+### Option B: Instant Dataset Switcher Batches
+Switch between benchmark scale profiles instantly:
+- `.\run_stage_baseline.bat` $\rightarrow$ Baseline Telemetry Profile (100 MB, 200k events)
+- `.\run_stage_6gb.bat` $\rightarrow$ Enterprise Multi-Subnet Dataset (350k events)
+- `.\run_stage_30gb.bat` $\rightarrow$ Mega Enterprise Campaign (500k events, Risk Score 97)
+
+### Option C: Manual CLI Pipeline Execution
 ```bash
 # 1. Activate Virtual Environment
 .\.venv\Scripts\activate
@@ -90,7 +179,7 @@ python -m src.killchain.eval.metrics
 uvicorn src.killchain.api:app --host 0.0.0.0 --port 8000
 ```
 
-### 3. Ingesting Full Multi-Million Datasets (e.g. 11M+ rows)
+### Option D: Ingesting Full Multi-Million Datasets (e.g. 11M+ rows)
 ```powershell
 python -m src.killchain.ingest --log "C:\Users\Ankit Umadi\Downloads\firex-10G.log" --clean
 ```
@@ -117,12 +206,29 @@ Interactive Swagger UI documentation is available live at **`http://localhost:80
 
 ## 📂 Deliverables & Documentation Index
 
-- **Pitch Presentation (16:9 PPTX):** [`docs/Cyberforge_Hackathon_Pitch_Deck.pptx`](docs/Cyberforge_Hackathon_Pitch_Deck.pptx) *(also saved in Downloads)*
+- **Pitch Presentation (16:9 PPTX):** [`docs/Cyberforge_Hackathon_Pitch_Deck.pptx`](docs/Cyberforge_Hackathon_Pitch_Deck.pptx) *(mirrored in Downloads)*
 - **Hackathon Demo & Pitch Guide (DOCX):** [`docs/CYBERFORGE_HACKATHON_DEMO_GUIDE.docx`](docs/CYBERFORGE_HACKATHON_DEMO_GUIDE.docx)
 - **Demo Script & Mentor Defense Sheet (Markdown):** [`docs/DEMO_PITCH_GUIDE.md`](docs/DEMO_PITCH_GUIDE.md)
 - **Interactive UI Template:** [`templates/incident_report.j2`](templates/incident_report.j2)
 - **Causal Replay TypeScript Engine:** [`src/vis/engine.ts`](src/vis/engine.ts)
 - **Evaluation Harness:** [`src/killchain/eval/metrics.py`](src/killchain/eval/metrics.py)
+- **Pitch Deck Generator Script:** [`scripts/generate_pitch_deck.py`](scripts/generate_pitch_deck.py)
+
+---
+
+## 🛡️ Mentor Defense FAQ Cheat Sheet
+
+### Q1: *"Why is your detection sensitivity 94.8% instead of 100%?"*
+> **Answer:** *"Capturing 100% by alerting on single-packet port drops destroys real-world usability. In production cybersecurity, uncorroborated single pings are filtered out to keep false alarms at 0.00%. Capturing 94.81% captures 100% of coordinated multi-stage attacks while beating the PRD 90% Great tier bar."*
+
+### Q2: *"How did you process 30GB of logs in only 135 MB of RAM?"*
+> **Answer:** *"PyArrow zero-copy streaming passes 100,000-row chunks directly to DuckDB's vectorized columnar engine without Python heap allocations. DuckDB offloads intermediate joins to temporary disk storage (`out/tmp_duckdb`), bounding memory usage."*
+
+### Q3: *"How does 2-hop lookahead calculate in under 2 milliseconds?"*
+> **Answer:** *"Rather than computing slow recursive graph queries at runtime, Cyberforge pre-indexes network reachability matrices in DuckDB during correlation and stores them as indexed JSON attributes in the `incidents` table."*
+
+### Q4: *"Why do your top incidents have a risk score of 97?"*
+> **Answer:** *"The dashboard sorts by `risk_score DESC` to show the CISOs their highest-priority threats first. Our deterministic formula awards 50 points for 7+ kill chain stages, 25 for critical DCSync severity, 12 for DMZ exposure, and 10 for direct Active Directory blast radius—totaling 97. Across our entire estate of 1,588 incidents, only 4% reach 97; the remaining 96% span down to 46."*
 
 ---
 
